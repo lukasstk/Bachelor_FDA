@@ -63,7 +63,7 @@ create_O_mat <- function(bm_mat, grid, ids, mechanism = c("MCAR", "MNAR")) {
 }
 
 
-O_mat <- create_O_mat(bm_mat, grid, ids, mechanism = "MCAR")
+O_mat <- create_O_mat(bm_mat, grid, ids, mechanism = "MNAR")
 
 # ---- 3) Indikatoren A und B ----
 # A = komplett, B = unvollständig

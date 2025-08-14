@@ -5,25 +5,23 @@
 #'  - Algorithm 2: Supremum test (T_{mu,D}) with KL-based Gaussian process approximation
 #'  - Algorithm 3: Simultaneous confidence bands for mu_A - mu_B
 #'
-#' Changes vs. original: O_mat, group_A, and grid are created **internally** from X_obs.
-#'  - O_mat := 1 if X_obs is observed (non-NA) and 0 otherwise.
-#'  - group_A (Example 1 in Ofner et al., 2025): row is in A iff it is **complete** (no NA),
-#'    otherwise it is in B (incomplete).
+#' Änderungen vs. Original: O_mat, group_A und grid werden **intern** aus X_obs erzeugt.
+#'  - O_mat := 1, wenn X_obs beobachtet (nicht-NA), sonst 0.
+#'  - group_A (Bsp. 1/2 in Ofner et al., 2025): Zeile in A, wenn beobachteter Anteil ≥ delta_A;
+#'    Default delta_A = 1 (nur vollständig beobachtete in A). Für Bsp. 2 z.B. delta_A = 0.7.
 #'  - grid := seq(0, 1, length.out = ncol(X_obs)).
+#'  - Subdomain **Paper-Regel**: wählt direkt die Punkte mit mind. 10% Beobachtung in **beiden**
+#'    Gruppen. Falls leer, einmaliger Fallback auf gemeinsame Überlappung (>0), sonst alle
+#'    beobachteten Punkte, sonst minimal 2 Punkte. In diesen Fällen gibt es **Warnings**.
 #'
-#' The exported functions allow optional overrides for O_mat, group_A, and grid, but when NULL
-#' the above automatic construction is used. This keeps backward-compatibility and supports
-#' one-argument calls with just X_obs.
+#' Hinweis: Integration nutzt tidyfun::tf_integrate für numerische Stabilität.
 #'
-#' The functions operate on matrices of observed values (with NA for missing) and the common grid.
-#' Integration uses tf::tf_integrate for numerical stability and API consistency.
-#'
-#' @name tidyfun_ext_algo1to3
+#' @name tidyfun_ext_algo1to3_auto
 #' @keywords methods
 #' @importFrom tf tfd tf_integrate
 NULL
 
-# --------- internal utilities (no export) -------------------------------------
+# --------------------------- interne Utilities ---------------------------------
 
 #' @keywords internal
 #' @noRd
@@ -43,6 +41,42 @@ NULL
   rowMeans(O_mat != 0) >= delta
 }
 
+#' Subdomain I nach Paper (10%) mit **einmaligem** Fallback (Warnings)
+#' @keywords internal
+#' @noRd
+.tfu_subdomain_idx_paper <- function(O_mat, group_A, min_frac = 0.10, m_min = 2L) {
+  n  <- nrow(O_mat)
+  IA <- as.numeric(as.logical(group_A))
+  IB <- 1 - IA
+  
+  cA <- colSums(O_mat * IA)
+  cB <- colSums(O_mat * IB)
+  
+  # Paper-Regel: ≥ min_frac * n in beiden Gruppen
+  idx <- which(cA >= min_frac * n & cB >= min_frac * n)
+  if (length(idx) >= max(2L, m_min)) {
+    return(list(idx = idx, min_frac_used = min_frac, fallback = NULL))
+  }
+  
+  # Fallback 1: gemeinsame Überlappung (>0 in beiden Gruppen)
+  idx2 <- which(cA > 0 & cB > 0)
+  if (length(idx2) >= max(2L, m_min)) {
+    warning("Subdomain (10%): keine Punkte mit ≥ min_frac in beiden Gruppen -> verwende gemeinsame Überlappung (>0).")
+    return(list(idx = idx2, min_frac_used = NA_real_, fallback = "overlap"))
+  }
+  
+  # Fallback 2: alle beobachteten Zeitpunkte (geringe Aussagekraft)
+  idx3 <- which(colSums(O_mat) > 0)
+  if (length(idx3) >= max(2L, m_min)) {
+    warning("Subdomain: keine gemeinsame Überlappung -> verwende alle beobachteten Zeitpunkte (evtl. geringe Aussagekraft).")
+    return(list(idx = idx3, min_frac_used = NA_real_, fallback = "any-observed"))
+  }
+  
+  # Härtester Fallback: nimm die ersten 2 Spalten
+  warning("Subdomain: zu wenige Beobachtungen insgesamt. Ergebnisse nicht interpretierbar (trivialer Fallback).")
+  list(idx = seq_len(min(2L, ncol(O_mat))), min_frac_used = NA_real_, fallback = "trivial")
+}
+
 #' Build/validate O_mat, group_A, grid from X_obs when missing
 #' @keywords internal
 #' @noRd
@@ -51,8 +85,9 @@ NULL
   if (!is.matrix(X_obs)) X_obs <- as.matrix(X_obs)
   storage.mode(X_obs) <- "numeric"
   n <- nrow(X_obs); m <- ncol(X_obs)
+  if (m < 2L) stop("X_obs muss mindestens 2 Spalten (Zeitpunkte) besitzen.")
   
-  # O_mat: 1 if observed, 0 if NA
+  # O_mat: 1 wenn beobachtet, 0 wenn NA
   if (is.null(O_mat)) {
     O_mat <- 1L * (!is.na(X_obs))
   } else {
@@ -60,7 +95,7 @@ NULL
     O_mat <- 1L * (O_mat != 0)
   }
   
-  # group_A: Example 1 (delta_A = 1) oder Example 2 (delta_A < 1)
+  # group_A: Example 1/2 via delta_A
   if (is.null(group_A)) {
     group_A <- .tfu_group_from_delta(O_mat, delta_A)
   } else {
@@ -68,26 +103,34 @@ NULL
     group_A <- as.logical(group_A)
   }
   
-  # spezifische Fehlermeldungen, falls eine Gruppe leer ist
-  nA <- sum(group_A)
-  nB <- sum(!group_A)
+  # Warnen, falls eine Gruppe leer ist -> automatisch Delta lockern/verschärfen (einmalig)
+  nA <- sum(group_A); nB <- sum(!group_A)
   if (nA == 0L || nB == 0L) {
     obs_frac <- rowMeans(O_mat != 0)
-    rng <- range(obs_frac)
     if (nA == 0L) {
-      stop(sprintf(
-        "Automatische Gruppierung ergab eine leere Gruppe A (keine Zeilen mit Beobachtungsanteil >= delta_A).\nTipp: 'delta_A' verringern oder 'group_A' explizit übergeben.\nDiag: delta_A = %.3f, range(obs_frac) = [%.3f, %.3f], nA = %d, nB = %d.",
-        delta_A, rng[1], rng[2], nA, nB
-      ))
+      # Delta automatisch reduzieren, bis beide Gruppen belegt sind
+      thr_seq <- sort(unique(c(seq(delta_A, 0.5, by = -0.05), 0.49, 0.4, 0.3, 0.2, 0.1)), decreasing = TRUE)
+      for (thr in thr_seq) {
+        cand <- .tfu_group_from_delta(O_mat, thr)
+        if (sum(cand) > 0L && sum(!cand) > 0L) { group_A <- cand; break }
+      }
+      if (sum(group_A) == 0L || sum(!group_A) == 0L) {
+        # Fallback: Median-Split
+        medf <- median(obs_frac)
+        group_A <- obs_frac >= medf
+        warning("Automatische Gruppierung: delta_A angepasst (Median-Split), da zuvor eine leere Gruppe vorlag.")
+      } else {
+        warning("Automatische Gruppierung: delta_A reduziert, um beide Gruppen zu füllen.")
+      }
     } else {
-      stop(sprintf(
-        "Automatische Gruppierung ergab eine leere Gruppe B (alle Zeilen haben Beobachtungsanteil >= delta_A).\nTipp: 'delta_A' erhöhen oder 'group_A' explizit übergeben.\nDiag: delta_A = %.3f, range(obs_frac) = [%.3f, %.3f], nA = %d, nB = %d.",
-        delta_A, rng[1], rng[2], nA, nB
-      ))
+      # Analog: delta erhöhen – hier direkt Median-Split
+      medf <- median(obs_frac)
+      group_A <- obs_frac >= medf
+      warning("Automatische Gruppierung: delta_A erhöht (Median-Split), da Gruppe B leer war.")
     }
   }
   
-  # grid: equidistant on [0,1]
+  # grid
   if (is.null(grid)) {
     grid <- seq(0, 1, length.out = m)
   } else {
@@ -98,7 +141,7 @@ NULL
   list(X_obs = X_obs, O_mat = O_mat, group_A = group_A, grid = grid)
 }
 
-#' Weighted (trapezoid) quadrature weights on possibly non-uniform grid
+#' Trapezgewichte auf ggf. nicht-uniformem Grid
 #' @keywords internal
 #' @noRd
 .tfu_trap_weights <- function(x) {
@@ -111,8 +154,7 @@ NULL
   w
 }
 
-#' Available-data means and observation probabilities p-hat_A, p-hat_B
-#' (denominator is total n, not n_A / n_B)
+#' Available-Data Mittelwerte & Beobachtungswahrsch. (denom: n)
 #' @keywords internal
 #' @noRd
 .tfu_available_means <- function(X_obs, O_mat, group_A, eps = 1e-8) {
@@ -131,7 +173,7 @@ NULL
   list(muA = muA_hat, muB = muB_hat, pA = pA_hat, pB = pB_hat)
 }
 
-#' Corrected covariance estimator K(s,t) per paper, vectorized
+#' Korrekturschätzer der Kovarianz K(s,t)
 #' @keywords internal
 #' @noRd
 .tfu_corrected_cov <- function(X_obs, O_mat, group_A, muA_hat, muB_hat, pA_hat, pB_hat) {
@@ -145,15 +187,15 @@ NULL
   if (length(A_idx)) Xc[A_idx, ] <- sweep(X_obs[A_idx, , drop = FALSE], 2, muA_hat, `-`)
   if (length(B_idx)) Xc[B_idx, ] <- sweep(X_obs[B_idx, , drop = FALSE], 2, muB_hat, `-`)
   
-  # zero-out unobserved & NA
+  # unobserved/NA auf 0
   Xc[O_mat == 0] <- 0
   Xc[is.na(Xc)]  <- 0
   
-  # group splits
+  # Spaltung nach Gruppen
   XA <- Xc[A_idx, , drop = FALSE]
   XB <- Xc[B_idx, , drop = FALSE]
   
-  # column-wise scaling by p-hat
+  # spaltenweise Skalierung
   if (nrow(XA)) XA <- sweep(XA, 2, pA_hat, "/")
   if (nrow(XB)) XB <- sweep(XB, 2, pB_hat, "/")
   
@@ -161,69 +203,42 @@ NULL
   Sum_B <- if (nrow(XB)) crossprod(XB) else matrix(0, ncol(X_obs), ncol(X_obs))
   
   K <- (Sum_A + Sum_B) / n
-  # symmetrize (numeric hygiene)
-  K <- (K + t(K)) / 2
+  K <- (K + t(K)) / 2  # symmetrisieren
   K
 }
 
-#' KL basis from covariance with trapezoid weights (W^{1/2} K W^{1/2})
-#' returns eigenvalues lam (>=0) and eigenfunctions phi (L2_w-orthonormal)
+#' KL-Basis aus Kovarianz mit Trapez-Gewichten (W^{1/2} K W^{1/2})
 #' @keywords internal
 #' @noRd
 .tfu_kl_from_cov <- function(K, grid) {
   w <- .tfu_trap_weights(grid)
   sw <- sqrt(w)
-  
-  # S = W^{1/2} K W^{1/2}
-  S <- (sw * t(sw * K))
+  S <- (sw * t(sw * K))              # diag(sw) %*% K %*% diag(sw)
   S <- (S + t(S)) / 2
-  
   ev <- eigen(S, symmetric = TRUE)
   lam <- pmax(ev$values, 0)
   U   <- ev$vectors
-  
-  # phi = W^{-1/2} U, then normalize in L2_w
-  phi <- sweep(U, 1, sw, "/")
+  phi <- sweep(U, 1, sw, "/")       # W^{-1/2} U
   norms <- sqrt(colSums(phi^2 * w))
-  phi   <- sweep(phi, 2, norms, "/")
-  
+  phi   <- sweep(phi, 2, norms, "/")  # L2_w-orthonormal
   list(lam = lam, phi = phi, w = w)
 }
 
-#' Optional subdomain selection: keep t with at least min_frac in both groups
-#' @keywords internal
-#' @noRd
-.tfu_subdomain_idx <- function(O_mat, group_A, min_frac = 0.10) {
-  if (is.null(min_frac)) return(seq_len(ncol(O_mat)))
-  n  <- nrow(O_mat)
-  IA <- as.numeric(as.logical(group_A))
-  IB <- 1 - IA
-  which(colSums(O_mat * IA) >= min_frac * n &
-          colSums(O_mat * IB) >= min_frac * n)
-}
+# ----------------------------- Algorithmus 1: L2-Test --------------------------
 
-# --------- Algorithm 1: L2 test ---------------------------------------------
-
-#' Algorithm 1: L2 test for equality of mean functions
+#' Algorithmus 1: L2-Test auf Gleichheit der Mittelwerte (verfügbare Daten)
 #'
-#' @param X_obs numeric matrix (n x m) of observed values; use NA for missing.
-#' @param O_mat optional 0/1 observation matrix (n x m). If NULL (default), it is
-#'   constructed internally as 1 where X_obs is observed and 0 where it is NA.
-#' @param group_A optional logical/numeric length n; if NULL (default), rows with no NA are
-#'   assigned to group A (complete) and rows with any NA to group B (incomplete).
-#' @param grid optional numeric vector of length m (strictly increasing); defaults to
-#'   seq(0, 1, length.out = ncol(X_obs)).
-#' @param fve numeric in (0,1]; fraction of variance explained to truncate KL (default 0.99).
-#' @param B integer; Monte-Carlo draws for the null mixture (default 5000).
-#' @param eps numeric; lower bound for \eqn{\hat p} (default 1e-8).
-#' @param min_frac optional numeric in (0,1]; if given, restricts to t with
-#'   at least \code{min_frac} observed in both groups (available-data subdomain).
-#' @param seed optional integer for reproducibility; if not NULL, sets seed for simulation.
-#' @param delta_A numeric in (0,1]; threshold for grouping rows into A vs B when
-#'   \code{group_A} is NULL. Default 1 (Example 1: only fully observed rows in A).
-#'   For Example 2, set e.g. 0.7 to put rows with ≥70% observed entries into A.
-#' @return list with elements: \code{stat}, \code{p_value}, \code{grid}, \code{muA}, \code{muB},
-#'   \code{lam} (used eigenvalues), and \code{idx} (subdomain indices).
+#' @param X_obs numeric Matrix (n x m) mit Beobachtungen; NA für fehlend.
+#' @param O_mat optional 0/1-Matrix (n x m). Default: intern aus X_obs.
+#' @param group_A optional logischer Vektor Länge n; Default: intern via delta_A.
+#' @param grid optional numeric Vektor Länge m; Default: seq(0,1,len=m).
+#' @param fve Anteil erklärter Varianz für KL-Trunkierung (Default 0.99).
+#' @param B  Monte-Carlo Ziehungen für Mischungsapproximation (Default 5000).
+#' @param eps Untergrenze für p̂ (Default 1e-8).
+#' @param min_frac numeric in [0,1]; **Paper-Regel** Mindestanteil je Gruppe für Subdomain (Default 0.10).
+#' @param seed integer für Reproduzierbarkeit.
+#' @param delta_A Schwelle in (0,1]; Gruppierung A vs. B, wenn group_A fehlend (Default 1).
+#' @return Liste: stat, p_value, grid, muA, muB, lam, idx, min_frac_used, fallback, delta_A
 #' @export
 tfu_algo1_L2_test <- function(X_obs, O_mat = NULL, group_A = NULL, grid = NULL,
                               fve = 0.99, B = 5000, eps = 1e-8,
@@ -232,25 +247,24 @@ tfu_algo1_L2_test <- function(X_obs, O_mat = NULL, group_A = NULL, grid = NULL,
   X_obs <- prep$X_obs; O_mat <- prep$O_mat; group_A <- prep$group_A; grid <- prep$grid
   n <- nrow(X_obs)
   
-  idx <- .tfu_subdomain_idx(O_mat, group_A, min_frac)
-  if (length(idx) < 2L) stop("Subdomain too small; relax 'min_frac' or check inputs.")
+  sub <- .tfu_subdomain_idx_paper(O_mat, group_A, min_frac = min_frac)
+  idx <- sub$idx; g  <- grid[idx]
   X  <- X_obs[, idx, drop = FALSE]
   O  <- O_mat[, idx, drop = FALSE]
-  g  <- grid[idx]
   
   est <- .tfu_available_means(X, O, group_A, eps = eps)
   muA <- est$muA; muB <- est$muB
   
-  # Observed statistic via tidyfun integration
+  # beobachtete Statistik
   diff_tfd <- tf::tfd(matrix(muA - muB, nrow = 1), arg = g)
   T_L2     <- n * tf::tf_integrate(diff_tfd^2, arg = g)
   
-  # Covariance & KL
+  # Kovarianz & KL
   K   <- .tfu_corrected_cov(X, O, group_A, muA, muB, est$pA, est$pB)
   KL  <- .tfu_kl_from_cov(K, g)
   lam <- KL$lam
   if (!is.null(seed)) set.seed(seed)
-  # choose q by FVE
+  # q via FVE
   if (sum(lam) <= 0) {
     q <- 1L; lam_q <- 0
   } else {
@@ -258,22 +272,21 @@ tfu_algo1_L2_test <- function(X_obs, O_mat = NULL, group_A = NULL, grid = NULL,
     q <- which(cum >= fve)[1]
     lam_q <- lam[seq_len(q)]
   }
-  # mixture of chi^2: sum(lam_j Z_j^2)
   Z <- matrix(rnorm(length(lam_q) * B), nrow = length(lam_q))
   W <- colSums((Z^2) * lam_q)
   p  <- (sum(W >= T_L2) + 1) / (B + 1)
   
   list(stat = as.numeric(T_L2), p_value = p,
-       grid = g, muA = muA, muB = muB, lam = lam_q, idx = idx)
+       grid = g, muA = muA, muB = muB, lam = lam_q, idx = idx,
+       min_frac_used = sub$min_frac_used, fallback = sub$fallback, delta_A = delta_A)
 }
 
-# --------- Algorithm 2: Supremum test ---------------------------------------
+# ----------------------------- Algorithmus 2: Supremum-Test --------------------
 
-#' Algorithm 2: Supremum test (T_{mu,D})
+#' Algorithmus 2: Supremum-Test (T_{mu,D})
 #'
 #' @inheritParams tfu_algo1_L2_test
-#' @return list with elements: \code{stat}, \code{p_value}, \code{grid}, \code{muA}, \code{muB},
-#'   \code{lam}, \code{phi} (first q eigenfunctions), and \code{idx}.
+#' @return Liste: stat, p_value, grid, muA, muB, lam, phi, idx, min_frac_used, fallback, delta_A
 #' @export
 tfu_algo2_sup_test <- function(X_obs, O_mat = NULL, group_A = NULL, grid = NULL,
                                fve = 0.95, B = 5000, eps = 1e-8,
@@ -282,24 +295,23 @@ tfu_algo2_sup_test <- function(X_obs, O_mat = NULL, group_A = NULL, grid = NULL,
   X_obs <- prep$X_obs; O_mat <- prep$O_mat; group_A <- prep$group_A; grid <- prep$grid
   n <- nrow(X_obs)
   
-  idx <- .tfu_subdomain_idx(O_mat, group_A, min_frac)
-  if (length(idx) < 2L) stop("Subdomain too small; relax 'min_frac' or check inputs.")
+  sub <- .tfu_subdomain_idx_paper(O_mat, group_A, min_frac = min_frac)
+  idx <- sub$idx; g  <- grid[idx]
   X  <- X_obs[, idx, drop = FALSE]
   O  <- O_mat[, idx, drop = FALSE]
-  g  <- grid[idx]
   
   est <- .tfu_available_means(X, O, group_A, eps = eps)
   muA <- est$muA; muB <- est$muB
   
-  # Observed statistic
+  # beobachtete Statistik
   T_D <- sqrt(n) * max(abs(muA - muB))
   
-  # Covariance & KL
+  # Kovarianz & KL
   K   <- .tfu_corrected_cov(X, O, group_A, muA, muB, est$pA, est$pB)
   KL  <- .tfu_kl_from_cov(K, g)
   lam <- KL$lam; phi <- KL$phi
   
-  # choose q by FVE
+  # q via FVE
   if (sum(lam) <= 0) {
     q <- 1L; lam_q <- 0; phi_q <- matrix(0, nrow = length(g), ncol = 1L)
   } else {
@@ -309,7 +321,6 @@ tfu_algo2_sup_test <- function(X_obs, O_mat = NULL, group_A = NULL, grid = NULL,
     phi_q <- phi[, seq_len(q), drop = FALSE]
   }
   
-  # Simulate sup | sum_j sqrt(lam_j) Z_j phi_j(t) |
   if (!is.null(seed)) set.seed(seed)
   Z   <- matrix(rnorm(q * B), nrow = q)              # q x B
   lam_phi <- sweep(phi_q, 2, sqrt(lam_q), "*")       # m x q
@@ -318,63 +329,61 @@ tfu_algo2_sup_test <- function(X_obs, O_mat = NULL, group_A = NULL, grid = NULL,
   p <- (sum(W >= T_D) + 1) / (B + 1)
   
   list(stat = as.numeric(T_D), p_value = p,
-       grid = g, muA = muA, muB = muB, lam = lam_q, phi = phi_q, idx = idx)
+       grid = g, muA = muA, muB = muB, lam = lam_q, phi = phi_q, idx = idx,
+       min_frac_used = sub$min_frac_used, fallback = sub$fallback, delta_A = delta_A)
 }
 
-# --------- Algorithm 3: Simultaneous confidence bands ------------------------
+# ----------------------------- Algorithmus 3: Konfidenzbänder ------------------
 
-#' Algorithm 3: Simultaneous confidence bands for mu_A - mu_B
+#' Algorithmus 3: Simultane Konfidenzbänder für mu_A - mu_B
+#'  -> nutzt tfu_algo2_sup_test für KL-Eigenwerte/-funktionen und Supremum-Approximation
 #'
 #' @inheritParams tfu_algo1_L2_test
-#' @param alpha numeric in (0,1), confidence level (default 0.05).
-#' @return list with elements: \code{grid}, \code{muA}, \code{muB}, \code{diff},
-#'   \code{lower}, \code{upper}, \code{q_alpha}, \code{lam}, \code{phi}, \code{idx}.
+#' @param alpha Konfidenzniveau (Default 0.05)
+#' @return Liste: grid, muA, muB, diff, lower, upper, q_alpha, lam, phi, idx, min_frac_used, fallback, delta_A
 #' @export
 tfu_algo3_conf_bands <- function(X_obs, O_mat = NULL, group_A = NULL, grid = NULL,
                                  alpha = 0.05, fve = 0.95, B = 5000, eps = 1e-8,
                                  min_frac = 0.10, seed = NULL, delta_A = 1) {
-  prep <- .tfu_prepare_inputs(X_obs, O_mat, group_A, grid, delta_A = delta_A)
-  X_obs <- prep$X_obs; O_mat <- prep$O_mat; group_A <- prep$group_A; grid <- prep$grid
-  n <- nrow(X_obs)
+  # Hole alle benötigten Größen direkt aus Algorithmus 2 (KL-Basis & Trunkierung bereits dort bestimmt)
+  a2 <- tfu_algo2_sup_test(
+    X_obs = X_obs, O_mat = O_mat, group_A = group_A, grid = grid,
+    fve = fve, B = B, eps = eps, min_frac = min_frac, seed = seed, delta_A = delta_A
+  )
   
-  idx <- .tfu_subdomain_idx(O_mat, group_A, min_frac)
-  if (length(idx) < 2L) stop("Subdomain too small; relax 'min_frac' or check inputs.")
-  X  <- X_obs[, idx, drop = FALSE]
-  O  <- O_mat[, idx, drop = FALSE]
-  g  <- grid[idx]
-  
-  est <- .tfu_available_means(X, O, group_A, eps = eps)
-  muA <- est$muA; muB <- est$muB
+  # Entpacken
+  g    <- a2$grid
+  muA  <- a2$muA
+  muB  <- a2$muB
+  lam  <- a2$lam      # bereits nach FVE getrimmt
+  phi  <- a2$phi      # dito
+  idx  <- a2$idx
   diff <- muA - muB
   
-  # Covariance & KL
-  K   <- .tfu_corrected_cov(X, O, group_A, muA, muB, est$pA, est$pB)
-  KL  <- .tfu_kl_from_cov(K, g)
-  lam <- KL$lam; phi <- KL$phi
-  
-  # choose q by FVE
-  if (sum(lam) <= 0) {
-    q <- 1L; lam_q <- 0; phi_q <- matrix(0, nrow = length(g), ncol = 1L)
-  } else {
-    cum <- cumsum(lam) / sum(lam)
-    q <- which(cum >= fve)[1]
-    lam_q <- lam[seq_len(q)]
-    phi_q <- phi[, seq_len(q), drop = FALSE]
-  }
-  
-  # simulate sup for quantile
+  # Monte-Carlo für Supremum der Grenz-GP nur mit (lam, phi) aus Algo 2
   if (!is.null(seed)) set.seed(seed)
-  Z   <- matrix(rnorm(q * B), nrow = q)
-  lam_phi <- sweep(phi_q, 2, sqrt(lam_q), "*")
-  gp_vals <- lam_phi %*% Z
+  q <- length(lam)
+  if (q < 1) {
+    lam <- 0
+    phi <- matrix(0, nrow = length(g), ncol = 1L)
+    q <- 1L
+  }
+  Z <- matrix(rnorm(q * B), nrow = q)            # q x B
+  lam_phi <- sweep(phi, 2, sqrt(lam), "*")       # m x q
+  gp_vals <- lam_phi %*% Z                       # m x B
   W <- apply(abs(gp_vals), 2, max)
   q_alpha <- as.numeric(stats::quantile(W, probs = 1 - alpha, names = FALSE))
   
+  # Bandbreite und Bänder
+  n <- nrow(as.matrix(X_obs))
   halfwidth <- q_alpha / sqrt(n)
   lower <- diff - halfwidth
   upper <- diff + halfwidth
   
-  list(grid = g, muA = muA, muB = muB, diff = diff,
-       lower = lower, upper = upper, q_alpha = q_alpha,
-       lam = lam_q, phi = phi_q, idx = idx)
+  list(
+    grid = g, muA = muA, muB = muB, diff = diff,
+    lower = lower, upper = upper, q_alpha = q_alpha,
+    lam = lam, phi = phi, idx = idx,
+    min_frac_used = a2$min_frac_used, fallback = a2$fallback, delta_A = a2$delta_A
+  )
 }
