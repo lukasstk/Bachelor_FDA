@@ -9,7 +9,30 @@
 suppressPackageStartupMessages({
   library(tidyfun); library(tf); library(tictoc)
   # doParallel/doRNG müssen NICHT explizit registriert werden – boot_mean_test() kümmert sich
+  library(foreach)
+  library(doParallel)
+  library(doRNG) 
 })
+
+## -------------------- Backend EINMAL starten & registrieren -------------------
+# workers <- max(1L, parallel::detectCores(logical = TRUE) - 1L)
+# cl <- parallel::makeCluster(workers)
+# on.exit(try(parallel::stopCluster(cl), silent = TRUE), add = TRUE)
+# doParallel::registerDoParallel(cl)
+# doRNG::registerDoRNG(42)
+# 
+# ## Gegen Oversubscription (BLAS/OpenMP) – wichtig für Performance
+# old_threads <- Sys.getenv(c("OPENBLAS_NUM_THREADS","MKL_NUM_THREADS","OMP_NUM_THREADS"),
+#                           unset = NA)
+# on.exit({
+#   if (!is.na(old_threads[1])) Sys.setenv(OPENBLAS_NUM_THREADS = old_threads[1])
+#   if (!is.na(old_threads[2])) Sys.setenv(MKL_NUM_THREADS     = old_threads[2])
+#   if (!is.na(old_threads[3])) Sys.setenv(OMP_NUM_THREADS     = old_threads[3])
+# }, add = TRUE)
+# Sys.setenv(OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="1", OMP_NUM_THREADS="1")
+# 
+# message(sprintf("Inneres Backend: %s mit %d Workern",
+#                 foreach::getDoParName(), foreach::getDoParWorkers()))
 
 ## ---------------------- Datengenerator --------------------------
 simulate_bm <- function(grid) {
@@ -54,7 +77,7 @@ one_rep_inner <- function(n, grid_spacing, mechanism, B_asym, B_boot, alpha, see
   res_BT_L2 <- boot_mean_test(
     X_obs = X_obs, B = B_boot, stat = "L2",
     parallel = TRUE, ncpus = ncpus_boot, seed = seed_for_rep + 11L,
-    manage_backend = "auto"  # zeigt Chunk-Progress
+    manage_backend = "auto"  
   )
   res_BT_D  <- boot_mean_test(
     X_obs = X_obs, B = B_boot, stat = "D",
@@ -97,15 +120,15 @@ run_type1_inner <- function(n, runs = 5000, grid_spacing = 100, mechanism = "MCA
 set.seed(42)
 
 tic("inner-parallel n = 100")
-res100 <- run_type1_inner(n = 100, runs = 5000, B_asym = 10000, B_boot = 10000)
+res100 <- run_type1_inner(n = 100, runs = 1000, B_asym = 5000, B_boot = 5000)
 toc()
 
 tic("inner-parallel n = 250")
-res250 <- run_type1_inner(n = 250, runs = 5000, B_asym = 10000, B_boot = 10000)
+res250 <- run_type1_inner(n = 250, runs = 1000, B_asym = 5000, B_boot = 5000)
 toc()
 
 tic("inner-parallel n = 500")
-res500 <- run_type1_inner(n = 500, runs = 5000, B_asym = 10000, B_boot = 10000)
+res500 <- run_type1_inner(n = 500, runs = 1000, B_asym = 5000, B_boot = 5000)
 toc()
 
 type1_table <- rbind(

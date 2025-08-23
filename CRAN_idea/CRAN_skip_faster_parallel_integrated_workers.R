@@ -445,6 +445,107 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
   }
 }
 
+
+# ---- Persistentes Parallel-Backend (paket-/skript-intern) ---------------------
+.tfu_par_env <- local({
+  e <- new.env(parent = emptyenv())
+  e$cl <- NULL
+  e$old_threads <- NULL
+  e$finalizer_set <- FALSE
+  e
+})
+
+# Manuelles Aufräumen (optional für explizite Kontrolle)
+shutdown_parallel_tfu <- function() {
+  if (!is.null(.tfu_par_env$cl)) {
+    try(parallel::stopCluster(.tfu_par_env$cl), silent = TRUE)
+    .tfu_par_env$cl <- NULL
+  }
+  olds <- .tfu_par_env$old_threads
+  if (!is.null(olds)) {
+    if (!is.na(olds[1])) Sys.setenv(OPENBLAS_NUM_THREADS = olds[1])
+    if (!is.na(olds[2])) Sys.setenv(MKL_NUM_THREADS     = olds[2])
+    if (!is.na(olds[3])) Sys.setenv(OMP_NUM_THREADS     = olds[3])
+    .tfu_par_env$old_threads <- NULL
+  }
+  invisible(TRUE)
+}
+
+# Einmalig initialisieren oder vorhandenes Backend nutzen
+.tfu_ensure_backend <- function(manage_backend = c("auto","force_pool","sequential"),
+                                ncpus = parallel::detectCores(logical = TRUE),
+                                worker_blas_threads = 1L,
+                                seed = 42,
+                                parallel_flag = TRUE) {
+  manage_backend <- match.arg(manage_backend)
+  
+  if (!isTRUE(parallel_flag) || identical(manage_backend, "sequential")) {
+    foreach::registerDoSEQ()
+    doRNG::registerDoRNG(seed)
+    return(list(nworkers = 1L, used = "sequential"))
+  }
+  
+  # Gibt es bereits ein extern registriertes Backend?
+  existing_workers <- tryCatch(foreach::getDoParWorkers(), error = function(e) 1L)
+  existing_backend <- tryCatch(foreach::getDoParName(),    error = function(e) "doSEQ")
+  has_external_backend <- isTRUE(existing_workers > 1L && existing_backend != "doSEQ")
+  
+  if (identical(manage_backend, "auto") && has_external_backend) {
+    # Externes Backend einfach weiter nutzen
+    doRNG::registerDoRNG(seed)
+    return(list(nworkers = existing_workers, used = paste0("external:", existing_backend)))
+  }
+  
+  # Persistenten internen Cluster wiederverwenden oder neu erstellen
+  if (!is.null(.tfu_par_env$cl)) {
+    # Bereits vorhandenen persist. Cluster verwenden
+    doParallel::registerDoParallel(.tfu_par_env$cl)
+    doRNG::registerDoRNG(seed)
+    nworkers <- tryCatch(foreach::getDoParWorkers(), error = function(e) NA_integer_)
+    return(list(nworkers = ifelse(is.na(nworkers), 1L, nworkers), used = "internal-reused"))
+  }
+  
+  # Neu erstellen (persistenter interner Cluster)
+  ncpus <- max(1L, min(as.integer(ncpus), parallel::detectCores(logical = TRUE)))
+  cl <- parallel::makeCluster(ncpus)
+  
+  # Oversubscription verhindern (pro Worker BLAS/OpenMP Threads auf k setzen)
+  .tfu_par_env$old_threads <- Sys.getenv(c("OPENBLAS_NUM_THREADS","MKL_NUM_THREADS","OMP_NUM_THREADS"), unset = NA)
+  parallel::clusterCall(cl, function(k) {
+    Sys.setenv(OPENBLAS_NUM_THREADS = as.character(k),
+               MKL_NUM_THREADS      = as.character(k),
+               OMP_NUM_THREADS      = as.character(k))
+    NULL
+  }, worker_blas_threads)
+  
+  doParallel::registerDoParallel(cl)
+  doRNG::registerDoRNG(seed)
+  .tfu_par_env$cl <- cl
+  
+  # Automatisches Aufräumen bei Session-Ende (Finalizer nur einmal setzen)
+  if (!isTRUE(.tfu_par_env$finalizer_set)) {
+    reg.finalizer(.tfu_par_env, function(e) {
+      if (!is.null(e$cl)) {
+        try(parallel::stopCluster(e$cl), silent = TRUE)
+        e$cl <- NULL
+      }
+      olds <- e$old_threads
+      if (!is.null(olds)) {
+        if (!is.na(olds[1])) Sys.setenv(OPENBLAS_NUM_THREADS = olds[1])
+        if (!is.na(olds[2])) Sys.setenv(MKL_NUM_THREADS     = olds[2])
+        if (!is.na(olds[3])) Sys.setenv(OMP_NUM_THREADS     = olds[3])
+        e$old_threads <- NULL
+      }
+    }, onexit = TRUE)
+    .tfu_par_env$finalizer_set <- TRUE
+  }
+  
+  list(nworkers = ncpus, used = "internal-new")
+}
+
+# -----------------------------------------------------------------------------
+# Deine Funktion: Bootstrap-basierter Mean-Test mit Chunking und persist. Backend
+# -----------------------------------------------------------------------------
 #' Bootstrap-basierter Mean-Test (L2 oder Supremum) — foreach + doRNG (mit Progress & Chunking)
 #'
 #' @description Liefert Bootstrap-p-Werte sowie (optional) simultane Bänder.
@@ -478,10 +579,13 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
                            return_boot = FALSE,
                            chunk_size = NULL,
                            manage_backend = c("auto","force_pool","sequential"),
-                           worker_blas_threads = 1L) {
+                           worker_blas_threads = 1L,
+                           progress = FALSE,
+                           progress_style = 3) {
   stat <- match.arg(stat)
   manage_backend <- match.arg(manage_backend)
   
+  # ---- Inputs vorbereiten ----
   prep <- .tfu_prepare_inputs(fd = fd, X_obs = X_obs, groups = groups, observed_ratio = observed_ratio)
   X_obs <- prep$X_obs; O_mat <- prep$O_mat; group_A <- prep$group_A; grid <- prep$grid
   n <- nrow(X_obs)
@@ -507,39 +611,16 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
   if (length(B_idx)) X_cent[B_idx, ] <- sweep(X[B_idx, , drop = FALSE], 2, muB, `-`)
   
   if (!is.null(seed)) set.seed(seed)
-  doRNG::registerDoRNG(if (is.null(seed)) sample.int(.Machine$integer.max, 1) else seed)
   
-  ## ---- Backend-Management ---------------------------------------------------
-  stopClusterOnExit <- FALSE
-  if (!isTRUE(parallel) || identical(manage_backend, "sequential")) {
-    foreach::registerDoSEQ()
-    nworkers <- 1L
-  } else {
-    existing_workers <- tryCatch(foreach::getDoParWorkers(), error = function(e) 1L)
-    existing_backend <- tryCatch(foreach::getDoParName(),    error = function(e) "doSEQ")
-    has_external_backend <- isTRUE(existing_workers > 1L && existing_backend != "doSEQ")
-    
-    if (identical(manage_backend, "auto") && has_external_backend) {
-      nworkers <- existing_workers
-    } else {
-      ncpus <- max(1L, min(ncpus, parallel::detectCores(logical = TRUE)))
-      cl <- parallel::makeCluster(ncpus)
-      stopClusterOnExit <- TRUE
-      
-      parallel::clusterCall(cl, function(k) {
-        Sys.setenv(OPENBLAS_NUM_THREADS = as.character(k),
-                   MKL_NUM_THREADS      = as.character(k),
-                   OMP_NUM_THREADS      = as.character(k))
-        NULL
-      }, worker_blas_threads)
-      
-      doParallel::registerDoParallel(cl)
-      on.exit(if (stopClusterOnExit) try(parallel::stopCluster(cl), silent = TRUE), add = TRUE)
-      nworkers <- ncpus
-    }
-  }
+  # ---- Backend: einmalig initialisieren oder vorhandenes nutzen ----
+  be <- .tfu_ensure_backend(manage_backend = manage_backend,
+                            ncpus = ncpus,
+                            worker_blas_threads = worker_blas_threads,
+                            seed = seed,
+                            parallel_flag = parallel)
+  nworkers <- be$nworkers
   
-  ## ---- Chunking-Heuristik ---------------------------------------------------
+  # ---- Chunking-Heuristik ----
   if (is.null(chunk_size) || !is.finite(chunk_size) || chunk_size < 1L) {
     chunk_size <- max(50L, ceiling(B / (3L * max(1L, nworkers))))
   } else {
@@ -547,7 +628,14 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
   }
   idx_chunks <- split(seq_len(B), ceiling(seq_len(B) / chunk_size))
   
-  ## ---- Foreach über CHUNKS --------------------------------------------------
+  # Optionaler Fortschrittsbalken über Chunks
+  pb <- NULL
+  if (isTRUE(progress)) {
+    pb <- txtProgressBar(min = 0, max = length(idx_chunks), style = progress_style)
+    on.exit({ if (!is.null(pb)) close(pb) }, add = TRUE)
+  }
+  
+  # ---- Foreach über Chunks ----
   boot_mat <- foreach::foreach(
     ch = idx_chunks,
     .combine = rbind,
@@ -590,10 +678,11 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
         redraws = redraws
       )
     }
+    if (!is.null(pb)) try(utils::setTxtProgressBar(pb, get(".i", envir = foreach:::.foreachGlobals) %||% 0L), silent = TRUE)
     out
   }
   
-  ## ---- Auswertung -----------------------------------------------------------
+  # ---- Auswertung ----
   boot_L2 <- boot_mat[, "L2"]
   boot_D  <- boot_mat[, "D"]
   total_redraws <- sum(boot_mat[, "redraws"])
@@ -644,6 +733,7 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
   
   hobj
 }
+
 
 
 
