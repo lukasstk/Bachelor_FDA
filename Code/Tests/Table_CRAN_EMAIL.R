@@ -2,9 +2,6 @@
 # Type-I-Error Simulation (Case 1: H0, z.B. MCAR)
 #   - liefert Tabelle mit: asym_L2, asym_D, boot_L2, boot_D
 #   - für n in {100, 250}
-# Voraussetzungen:
-#   - tfu_algo1_L2_test, tfu_algo2_sup_test, tfu_algo5_bootstrap sind geladen
-#   - Pakete: tidyfun, tf, dplyr (optional)
 # ===============================================================
 
 library(tidyfun); library(tf)
@@ -27,6 +24,7 @@ simulate_X_obs <- function(n, grid_spacing = 100, mechanism = c("MCAR","MNAR"), 
   mechanism <- match.arg(mechanism)
   grid <- seq(0, 1, length.out = grid_spacing)
   bm_mat <- t(replicate(n, simulate_bm(grid)))
+  ids <- paste0("ID", seq_len(n))
   I_A <- rbinom(n, 1, p_complete)  # 1 = komplett, 0 = lückenhaft
   O_mat <- matrix(0L, n, grid_spacing)
   for (i in seq_len(n)) {
@@ -35,25 +33,28 @@ simulate_X_obs <- function(n, grid_spacing = 100, mechanism = c("MCAR","MNAR"), 
   }
   X_obs <- bm_mat
   X_obs[O_mat == 0L] <- NA_real_
-  X_obs
+  list(X_obs = X_obs, grid = grid, ids = ids)
 }
 
 # ----- 1 Replikat: vier Tests (asym L2/D, boot L2/D) -------------------------
 one_rep <- function(n, grid_spacing, mechanism, B_asym, B_boot, alpha, base_seed) {
   set.seed(base_seed)
-  X_obs <- simulate_X_obs(n, grid_spacing, mechanism)
+  sim <- simulate_X_obs(n, grid_spacing, mechanism)
+  X_obs <- sim$X_obs; grid <- sim$grid; ids <- sim$ids
   
-  # asymptotische Tests (mit eigenem Seed für Reproduzierbarkeit)
-  res_L2 <- tfu_algo1_L2_test(X_obs = X_obs)
-  res_D  <- tfu_algo2_sup_test(X_obs = X_obs)
+  # fd-Objekt für asymptotische Tests
+  fd <- tf::tfd(X_obs, arg = grid, id = ids)
   
-  # Bootstrap-Tests
-  res_BT <- tfu_algo5_bootstrap(
-    X_obs   = X_obs) # physische Kerne
+  # asymptotische Tests
+  res_L2 <- tfu_algo1_L2_test(fd = fd, B = B_asym)
+  res_D  <- tfu_algo2_sup_test(fd = fd, B = B_asym)
+  
+  # Bootstrap-Tests (bleiben matrix-basiert)
+  res_BT <- tfu_algo5_bootstrap(X_obs = X_obs, B = B_boot)
   
   c(
-    asym_L2 = as.numeric(res_L2$p_value < alpha),
-    asym_D  = as.numeric(res_D$p_value  < alpha),
+    asym_L2 = as.numeric(res_L2$p.value < alpha),
+    asym_D  = as.numeric(res_D$p.value  < alpha),
     boot_L2 = as.numeric(res_BT$p_L2    < alpha),
     boot_D  = as.numeric(res_BT$p_D     < alpha)
   )
@@ -64,14 +65,13 @@ run_type1 <- function(n, R = 500, grid_spacing = 100, mechanism = "MCAR",
                       alpha = 0.05, B_asym = 2000, B_boot = 1000, base_seed = 1,
                       quiet = TRUE) {
   if (quiet) {
-    old_w <- getOption("warn"); options(warn = 1) # warnings zeigen, aber weiterlaufen
+    old_w <- getOption("warn"); options(warn = 1)
     on.exit(options(warn = old_w), add = TRUE)
   }
   pb <- txtProgressBar(min = 0, max = R, style = 3)
   M <- matrix(0, nrow = R, ncol = 4)
   colnames(M) <- c("asym_L2","asym_D","boot_L2","boot_D")
   for (r in seq_len(R)) {
-    # pro Replikat eigener Seed-Offset
     M[r, ] <- one_rep(n, grid_spacing, mechanism, B_asym, B_boot, alpha, base_seed + 1000*r)
     setTxtProgressBar(pb, r)
   }
@@ -89,32 +89,8 @@ run_type1 <- function(n, R = 500, grid_spacing = 100, mechanism = "MCAR",
 
 # ======= AUSFÜHREN: n = 100 und 250 (Case 1: MCAR) ============================
 set.seed(42)
-library(tictoc)
-tic("n = 100")
-res100 <- suppressWarnings(run_type1(n = 100, R = 500, mechanism = "MCAR",
-                                     B_asym = 10000, B_boot = 10000))
-toc()
+res100 <- suppressWarnings(run_type1(n = 100, R = 100, mechanism = "MCAR", B_asym = 5000, B_boot = 5000))
+res250 <- suppressWarnings(run_type1(n = 250, R = 100, mechanism = "MCAR", B_asym = 5000, B_boot = 5000))
 
-tic("n = 250")
-res250 <- suppressWarnings(run_type1(n = 250, R = 100, mechanism = "MCAR",
-                                     B_asym = 10000, B_boot = 10000))
-toc()
-
-tic("n = 500")
-res500 <- suppressWarnings(run_type1(n = 500, R = 100, mechanism = "MCAR",
-                                     B_asym = 10000, B_boot = 10000))
-toc()
-
-type1_table <- rbind(res100, res250, res500)
+type1_table <- rbind(res100, res250)
 type1_table
-
-# > res100 <- suppressWarnings(run_type1(n = 100, R = 1000, mechanism = "MCAR", B_asym = 5000, B_boot = 5000))
-# |=============================================================================================| 100%
-# > res250 <- suppressWarnings(run_type1(n = 250, R = 1000, mechanism = "MCAR", B_asym = 5000, B_boot = 5000))
-# |=============================================================================================| 100%
-# > 
-#   > type1_table <- rbind(res100, res250)
-# > type1_table
-# n asym_L2 asym_D boot_L2 boot_D
-# 1 100    0.08   0.10    0.07   0.07
-# 2 250    0.07   0.08    0.06   0.06
