@@ -120,15 +120,15 @@ run_type1_inner <- function(n, runs = 5000, grid_spacing = 100, mechanism = "MCA
 set.seed(42)
 
 tic("inner-parallel n = 100")
-res100 <- run_type1_inner(n = 100, runs = 1000, B_asym = 5000, B_boot = 5000)
+res100 <- run_type1_inner(n = 100, runs = 100, B_asym = 5000, B_boot = 5000)
 toc()
 
 tic("inner-parallel n = 250")
-res250 <- run_type1_inner(n = 250, runs = 1000, B_asym = 5000, B_boot = 5000)
+res250 <- run_type1_inner(n = 250, runs = 100, B_asym = 5000, B_boot = 5000)
 toc()
 
 tic("inner-parallel n = 500")
-res500 <- run_type1_inner(n = 500, runs = 1000, B_asym = 5000, B_boot = 5000)
+res500 <- run_type1_inner(n = 500, runs = 100, B_asym = 5000, B_boot = 5000)
 toc()
 
 type1_table <- rbind(
