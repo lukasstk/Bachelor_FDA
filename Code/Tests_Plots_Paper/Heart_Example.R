@@ -17,45 +17,34 @@ load("Data/heart_rate.RData")
 # Erwartet: rate_dt mit Spalten id, ti (Stunden 20–26), y0 (bpm)
 
 # ===================== 2) tfd-Objekt & Wide-Matrix ============================
-stopifnot(all(c("id","ti","y0") %in% names(rate_dt)))
 rate_dt <- rate_dt %>% mutate(ti = as.numeric(ti))
 
 fd_hr <- tf::tfd(rate_dt, arg = "ti", id = "id", value = "y0")
 
-# Wide: Zeilen = id, Spalten = Zeitpunkte
-wide_hr <- rate_dt %>%
-  select(id, ti, y0) %>%
-  distinct() %>%
-  arrange(id, ti) %>%
-  tidyr::pivot_wider(names_from = ti, values_from = y0)
+# Wide: Zeilen = id, Spalten = Zeitpunkte (direkt mit Pipe)
+wide_hr <- rate_dt |>
+  tidyr::pivot_wider(
+    id_cols   = id,
+    names_from  = ti,
+    values_from = y0
+  )
 
-# Matrix X_obs (ohne id), Spalten numerisch sortieren
-X_obs <- wide_hr %>% select(-id) %>% as.matrix()
-col_order <- order(as.numeric(colnames(X_obs)))
-X_obs <- X_obs[, col_order, drop = FALSE]
-colnames(X_obs) <- as.character(sort(as.numeric(colnames(X_obs))))
-row.names(X_obs) <- as.character(wide_hr$id)  # IDs als character
+# Matrix X_obs (ohne id)
+X_obs <- wide_hr |>
+  dplyr::select(-id) |>
+  as.matrix()
+
+row.names(X_obs) <- as.character(wide_hr$id)  
 
 # ===================== 3) Tests (asymptotisch + Bänder) ======================
 set.seed(2025)
 
 res_L2 <- asym_mean_L2_test(
-  fd = fd_hr,
-  observed_ratio = 1,
-  min_frac = 0.10,
-  fve = 0.99,
-  B = 5000,
-  seed = 2025
+  fd = fd_hr
 )
 
 res_sup <- asym_mean_sup_test(
-  fd = fd_hr,
-  observed_ratio = 1,
-  min_frac = 0.10,
-  fve = 0.99,
-  B = 5000,
-  compute_bands = TRUE,
-  seed = 2025
+  fd = fd_hr
 )
 
 cat("\n=== HEART RATE: Ergebnisse (complete vs incomplete) ===\n")
@@ -115,12 +104,4 @@ p_right <- ggplot(df_band, aes(x = ti)) +
 # ===================== 6) Anzeigen (Seite an Seite) ===========================
 p_left + p_right
 
-# ===================== (Optional) Bootstrap-Variante ===========================
-# res_boot <- boot_mean_test(
-#   fd = fd_hr, observed_ratio = 1, min_frac = 0.10, alpha = 0.05,
-#   stat = "D", B = 10000, seed = 2025,
-#   parallel = TRUE, ncpus = max(1L, parallel::detectCores() - 1L),
-#   manage_backend = "auto", compute_bands = TRUE
-# )
-# print(res_boot)
-# # Plot analog mit res_boot$grid, $diff, $lower, $upper
+
