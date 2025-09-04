@@ -1,0 +1,31 @@
+Package: mcar.test
+Type: Package
+Title: Testing the Missing Completely at Random Assumption for Functional Data
+Version: 0.1.0
+Authors@R: 
+    c(
+      person("Lukas", "Stank", 
+             email = "lukas.stank@campus.lmu.de", 
+             role = c("aut", "cre"))
+    )
+Description: Provides asymptotic and bootstrap-based hypothesis tests 
+    for the Missing Completely At Random (MCAR) assumption in 
+    partially observed functional data. Implements the mean comparison 
+    tests and simultaneous confidence bands as proposed in Ofner, Hörmann, 
+    Kraus, and Liebl (2025).
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Imports: 
+    tf,
+    stats,
+    utils,
+    foreach,
+    doParallel,
+    doRNG,
+    parallel
+Suggests:
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
