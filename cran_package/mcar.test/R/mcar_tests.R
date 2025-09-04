@@ -465,7 +465,7 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
 #' grid <- seq(0, 1, length.out = m)
 #' bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(m-1, sd = sqrt(d)))) }
 #' X  <- t(replicate(n, bm(grid)))
-#' # Introduce simple censoring (MNAR-ish): observe only when -1 < X < 2
+#' # Introduce simple censoring (MNAR): observe only when -1 < X < 2
 #' O  <- 1L * (X > -1 & X < 2); X[O == 0L] <- NA_real_
 #' # No groups supplied -> auto-grouping by observed_ratio
 #' h <- asym_mean_L2_test(X_obs = X, B = 1000, seed = 1)
@@ -631,7 +631,6 @@ asym_mean_sup_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_
 #' bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(m-1, sd = sqrt(d)))) }
 #' X  <- t(replicate(n, bm(grid)))
 #' O  <- 1L * (X > -1 & X < 2); X[O == 0L] <- NA_real_
-#' # keep small B so examples run fast on CRAN
 #' h <- boot_mean_test(X_obs = X, stat = "D", B = 100, parallel = FALSE, seed = 1)
 #' h$p.value
 #' @export
