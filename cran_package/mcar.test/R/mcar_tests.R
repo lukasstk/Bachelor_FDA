@@ -40,11 +40,6 @@ NULL
 # =============================================================================
 
 #' Internal environment for parallel resources
-#'
-#' Stores cluster handles and original BLAS/OpenMP thread settings
-#' to manage reproducible parallelization. This environment persists
-#' across function calls and is finalized on package unload.
-#'
 #' @keywords internal
 #' @noRd
 .tfu_par_env <- new.env(parent = emptyenv())
@@ -53,11 +48,6 @@ NULL
 .tfu_par_env$finalizer_set <- FALSE
 
 #' Stop internal parallel backend and restore thread settings
-#'
-#' Shuts down the internal cluster (if any) created by
-#' `.tfu_ensure_backend()`, and restores the previous BLAS/OpenMP
-#' threading environment variables. Called explicitly or via finalizer.
-#'
 #' @keywords internal
 #' @noRd
 shutdown_parallel_tfu <- function() {
@@ -73,6 +63,29 @@ shutdown_parallel_tfu <- function() {
     .tfu_par_env$old_threads <- NULL
   }
   invisible(TRUE)
+}
+
+#' Fully reset foreach backend and RNG (use after user interrupt)
+#' @keywords internal
+#' @noRd
+.tfu_reset_backend <- function() {
+  # deregister foreach backend to avoid talking to stale sockets
+  try(foreach::registerDoSEQ(), silent = TRUE)
+  # kill our internal cluster if any and restore threads
+  try(shutdown_parallel_tfu(), silent = TRUE)
+  # clear doRNG association
+  try(doRNG::registerDoRNG(NULL), silent = TRUE)
+  # set robust RNG kind on master (fresh start)
+  suppressWarnings(RNGkind("L'Ecuyer-CMRG"))
+  set.seed(42)
+  invisible(TRUE)
+}
+
+#' Detect the notorious "worker initialization failed" error
+#' @keywords internal
+#' @noRd
+.tfu_is_worker_init_error <- function(e) {
+  inherits(e, "error") && grepl("worker initialization failed", conditionMessage(e), fixed = TRUE)
 }
 
 #' Package load hook: initialize parallel environment
@@ -91,6 +104,15 @@ shutdown_parallel_tfu <- function() {
     .tfu_par_env$old_threads <- NULL
     .tfu_par_env$finalizer_set <- FALSE
   }
+}
+
+#' Package unload hook: ensure cluster + RNG cleanup
+#' @keywords internal
+#' @noRd
+.onUnload <- function(libpath) {
+  try(foreach::registerDoSEQ(), silent = TRUE)
+  try(doRNG::registerDoRNG(NULL), silent = TRUE)
+  try(shutdown_parallel_tfu(), silent = TRUE)
 }
 
 # -- Bootstrap helper up-front ----------------
@@ -322,28 +344,12 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
   out
 }
 
-#' Stop internal parallel backend
-#' @keywords internal
-#' @noRd
-shutdown_parallel_tfu <- function() {
-  if (!is.null(.tfu_par_env$cl)) {
-    try(parallel::stopCluster(.tfu_par_env$cl), silent = TRUE)
-    .tfu_par_env$cl <- NULL
-  }
-  olds <- .tfu_par_env$old_threads
-  if (!is.null(olds)) {
-    if (!is.na(olds[1])) Sys.setenv(OPENBLAS_NUM_THREADS = olds[1])
-    if (!is.na(olds[2])) Sys.setenv(MKL_NUM_THREADS     = olds[2])
-    if (!is.na(olds[3])) Sys.setenv(OMP_NUM_THREADS     = olds[3])
-    .tfu_par_env$old_threads <- NULL
-  }
-  invisible(TRUE)
-}
 
 #' Ensure/reuse parallel backend for foreach (robust to interrupts)
-#' - Reuses external backends
-#' - Reuses internal pool if alive; otherwise rebuilds it
-#' - After an interrupt (stale sockets), the liveness check recreates the pool
+#' - Reuses external backends when present
+#' - Reuses internal pool if alive; otherwise hard-resets and rebuilds it
+#' - Sets robust RNG (L'Ecuyer-CMRG) and per-worker streams
+#' - Pins BLAS/OpenMP threads per worker to avoid oversubscription
 #' @keywords internal
 #' @noRd
 .tfu_ensure_backend <- function(manage_backend = c("auto","force_pool","sequential"),
@@ -353,54 +359,53 @@ shutdown_parallel_tfu <- function() {
                                 parallel_flag = TRUE) {
   manage_backend <- match.arg(manage_backend)
   
-  # Helper: is a cluster alive?
+  # Liveness probe for an existing cluster
   .is_alive <- function(cl) {
     if (is.null(cl)) return(FALSE)
-    ok <- tryCatch({
-      parallel::clusterCall(cl, function() TRUE)
-      TRUE
-    }, error = function(e) FALSE)
+    ok <- tryCatch({ parallel::clusterCall(cl, function() TRUE); TRUE },
+                   error = function(e) FALSE)
     isTRUE(ok)
   }
   
+  # Sequential path (no cluster)
   if (!isTRUE(parallel_flag) || identical(manage_backend, "sequential")) {
     foreach::registerDoSEQ()
+    if (!is.null(seed)) { suppressWarnings(RNGkind("L'Ecuyer-CMRG")); set.seed(seed) }
     doRNG::registerDoRNG(seed)
     return(list(nworkers = 1L, used = "sequential"))
   }
   
-  # external backend present? -> reuse
+  # External backend present? -> reuse (but set deterministic RNG)
   existing_workers <- tryCatch(foreach::getDoParWorkers(), error = function(e) 1L)
   existing_backend <- tryCatch(foreach::getDoParName(),    error = function(e) "doSEQ")
   has_external_backend <- isTRUE(existing_workers > 1L && existing_backend != "doSEQ")
+  
   if (identical(manage_backend, "auto") && has_external_backend) {
+    if (!is.null(seed)) { suppressWarnings(RNGkind("L'Ecuyer-CMRG")); set.seed(seed) }
     doRNG::registerDoRNG(seed)
     return(list(nworkers = existing_workers, used = paste0("external:", existing_backend)))
   }
   
-  # Internal backend reuse or (re)create
-  reuse <- FALSE
-  if (.is_alive(.tfu_par_env$cl)) {
-    reuse <- TRUE
-  } else {
-    # stale/NULL -> hard reset
-    try(shutdown_parallel_tfu(), silent = TRUE)
-    .tfu_par_env$cl <- NULL
-  }
-  
-  if (reuse && !identical(manage_backend, "force_pool")) {
+  # Internal backend: reuse if alive (unless force_pool)
+  if (.is_alive(.tfu_par_env$cl) && !identical(manage_backend, "force_pool")) {
     doParallel::registerDoParallel(.tfu_par_env$cl)
+    if (!is.null(seed)) { suppressWarnings(RNGkind("L'Ecuyer-CMRG")); set.seed(seed) }
     doRNG::registerDoRNG(seed)
-    nworkers <- tryCatch(foreach::getDoParWorkers(), error = function(e) NA_integer_)
-    return(list(nworkers = ifelse(is.na(nworkers), 1L, nworkers), used = "internal-reused"))
+    nworkers <- tryCatch(foreach::getDoParWorkers(), error = function(e) 1L)
+    return(list(nworkers = nworkers, used = "internal-reused"))
   }
   
-  # (Re)create internal pool
+  # Hard reset (crucial after interrupts)
+  .tfu_reset_backend()
+  
+  # Create fresh internal cluster
   ncpus <- max(1L, min(as.integer(ncpus), parallel::detectCores(logical = TRUE)))
   cl <- parallel::makeCluster(ncpus)
   
-  # Save current thread envs and pin threads per worker
-  .tfu_par_env$old_threads <- Sys.getenv(c("OPENBLAS_NUM_THREADS","MKL_NUM_THREADS","OMP_NUM_THREADS"), unset = NA)
+  # Pin BLAS/OpenMP threads per worker (avoid oversubscription)
+  .tfu_par_env$old_threads <- Sys.getenv(
+    c("OPENBLAS_NUM_THREADS","MKL_NUM_THREADS","OMP_NUM_THREADS"), unset = NA
+  )
   parallel::clusterCall(cl, function(k) {
     Sys.setenv(OPENBLAS_NUM_THREADS = as.character(k),
                MKL_NUM_THREADS      = as.character(k),
@@ -408,11 +413,19 @@ shutdown_parallel_tfu <- function() {
     NULL
   }, worker_blas_threads)
   
+  # Robust RNG on master + per worker streams
+  if (!is.null(seed)) {
+    suppressWarnings(RNGkind("L'Ecuyer-CMRG"))
+    set.seed(seed)
+    parallel::clusterSetRNGStream(cl, iseed = seed)
+  }
+  
+  # Register backend and doRNG
   doParallel::registerDoParallel(cl)
   doRNG::registerDoRNG(seed)
-  .tfu_par_env$cl <- cl
   
-  # one-time finalizer (safety net)
+  # Keep handle & one-time finalizer to guarantee cleanup
+  .tfu_par_env$cl <- cl
   if (!isTRUE(.tfu_par_env$finalizer_set)) {
     reg.finalizer(.tfu_par_env, function(e) {
       if (!is.null(e$cl)) { try(parallel::stopCluster(e$cl), silent = TRUE); e$cl <- NULL }
@@ -426,9 +439,6 @@ shutdown_parallel_tfu <- function() {
     }, onexit = TRUE)
     .tfu_par_env$finalizer_set <- TRUE
   }
-  
-  # Optional: ensure cleanup if caller aborts mid-loop (only for internal-new)
-  # on.exit(shutdown_parallel_tfu(), add = TRUE)
   
   list(nworkers = ncpus, used = "internal-new")
 }
@@ -666,55 +676,85 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
   if (length(B_idx)) X_cent[B_idx, ] <- sweep(X[B_idx, , drop = FALSE], 2, muB, `-`)
 
   if (!is.null(seed)) set.seed(seed)
-
-  be <- .tfu_ensure_backend(manage_backend = manage_backend,
-                            ncpus = ncpus,
-                            worker_blas_threads = worker_blas_threads,
-                            seed = seed,
-                            parallel_flag = parallel)
-  nworkers <- be$nworkers
-
-  if (is.null(chunk_size) || !is.finite(chunk_size) || chunk_size < 1L) {
-    chunk_size <- max(50L, ceiling(B / (3L * max(1L, nworkers))))
-  } else {
-    chunk_size <- as.integer(chunk_size)
-  }
-  idx_chunks <- split(seq_len(B), ceiling(seq_len(B) / chunk_size))
-
-  boot_mat <- foreach::foreach(
-    ch = idx_chunks, .combine = rbind, .init = NULL, .inorder = FALSE
-  ) %dorng% {
-    out <- matrix(NA_real_, nrow = length(ch), ncol = 3L,
-                  dimnames = list(NULL, c("L2","D","redraws")))
-    for (ii in seq_along(ch)) {
-      redraws <- 0L
-      repeat {
-        samp_idx <- sample.int(n, n, replace = TRUE)
-        gA_samp  <- group_A[samp_idx]
-        IA <- as.numeric(gA_samp); IB <- 1 - IA
-        OA <- (O[samp_idx, , drop = FALSE] * IA)
-        OB <- (O[samp_idx, , drop = FALSE] * IB)
-        pA <- colSums(OA) / n
-        pB <- colSums(OB) / n
-        if (all(pA > 0) && all(pB > 0)) break
-        redraws <- redraws + 1L
-      }
-      Xs <- X_cent[samp_idx, , drop = FALSE]
-      XA <- Xs; XA[IB == 1, ] <- NA
-      numA <- colSums(replace(XA, is.na(XA), 0))
-      muA_b <- numA / (n * pA)
-      XB <- Xs; XB[IA == 1, ] <- NA
-      numB <- colSums(replace(XB, is.na(XB), 0))
-      muB_b <- numB / (n * pB)
-      d_b <- muA_b - muB_b
-      out[ii, ] <- c(
-        L2 = n * sum((d_b^2) * w),
-        D  = sqrt(n) * max(abs(d_b)),
-        redraws = redraws
-      )
+  
+  .run_boot <- function(manage_backend_mode = manage_backend, ncpus_eff = ncpus) {
+    be <- .tfu_ensure_backend(
+      manage_backend      = manage_backend_mode,
+      ncpus               = ncpus_eff,
+      worker_blas_threads = worker_blas_threads,
+      seed                = seed,
+      parallel_flag       = parallel
+    )
+    nworkers <- be$nworkers
+    
+    # Chunking
+    cs <- chunk_size
+    if (is.null(cs) || !is.finite(cs) || cs < 1L) {
+      cs <- max(50L, ceiling(B / (3L * max(1L, nworkers))))
+    } else {
+      cs <- as.integer(cs)
     }
-    out
+    idx_chunks <- split(seq_len(B), ceiling(seq_len(B) / cs))
+    
+    # --- capture for worker export ---
+    n_       <- n
+    X_cent_  <- X_cent
+    O_       <- O
+    group_A_ <- group_A
+    w_       <- w
+    
+    boot_mat <- foreach::foreach(
+      ch = idx_chunks, .combine = rbind, .init = NULL, .inorder = FALSE
+    ) %dorng% {
+      out <- matrix(NA_real_, nrow = length(ch), ncol = 3L,
+                    dimnames = list(NULL, c("L2","D","redraws")))
+      for (ii in seq_along(ch)) {
+        redraws <- 0L
+        repeat {
+          samp_idx <- sample.int(n_, n_, replace = TRUE)
+          gA_samp  <- group_A_[samp_idx]
+          IA <- as.numeric(gA_samp); IB <- 1 - IA
+          OA <- (O_[samp_idx, , drop = FALSE] * IA)
+          OB <- (O_[samp_idx, , drop = FALSE] * IB)
+          pA <- colSums(OA) / n_
+          pB <- colSums(OB) / n_
+          if (all(pA > 0) && all(pB > 0)) break
+          redraws <- redraws + 1L
+        }
+        Xs <- X_cent_[samp_idx, , drop = FALSE]
+        XA <- Xs; XA[IB == 1, ] <- NA
+        numA <- colSums(replace(XA, is.na(XA), 0))
+        muA_b <- numA / (n_ * pA)
+        XB <- Xs; XB[IA == 1, ] <- NA
+        numB <- colSums(replace(XB, is.na(XB), 0))
+        muB_b <- numB / (n_ * pB)
+        d_b <- muA_b - muB_b
+        out[ii, ] <- c(
+          L2 = n_ * sum((d_b^2) * w_),
+          D  = sqrt(n_) * max(abs(d_b)),
+          redraws = redraws
+        )
+      }
+      out
+    }
+    boot_mat  # <— explizit zurückgeben (oder einfach als letzte Zeile stehen lassen)
+  }           # <— WICHTIG: .run_boot() HIER SCHLIESSEN!
+  
+  # --- robust run with single automatic retry on stale backend ---
+  boot_mat <- tryCatch(
+    .run_boot(manage_backend_mode = manage_backend, ncpus_eff = ncpus),
+    error = function(e) e
+  )
+  if (inherits(boot_mat, "error") && .tfu_is_worker_init_error(boot_mat)) {
+    .tfu_reset_backend()
+    boot_mat <- tryCatch(
+      .run_boot(manage_backend_mode = "force_pool",
+                ncpus_eff = max(1L, parallel::detectCores(logical = TRUE) - 1L)),
+      error = function(e) e
+    )
   }
+  if (inherits(boot_mat, "error")) stop(boot_mat)
+  
 
   boot_L2 <- boot_mat[, "L2"]; boot_D <- boot_mat[, "D"]
   total_redraws <- sum(boot_mat[, "redraws"])
@@ -768,5 +808,5 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
   hobj$total_redraws <- total_redraws
   hobj$skip_rate <- total_redraws / (B + total_redraws)
   if (isTRUE(return_boot)) { hobj$boot_L2 <- boot_L2; hobj$boot_D <- boot_D }
-  hobj
+  return(hobj)
 }
