@@ -200,11 +200,6 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
   if (length(idx_strict) >= 2L) {
     return(list(idx = idx_strict, min_frac_used = min_frac, fallback = NULL))
   }
-  idx_overlap <- which(cA > 0 & cB > 0)
-  if (length(idx_overlap) >= 2L) {
-    warning("Subdomain: overlap fallback (both groups > 0 observations).")
-    return(list(idx = idx_overlap, min_frac_used = NA_real_, fallback = "overlap"))
-  }
   stop(
     paste0(
       "No suitable subdomain found: neither strict criterion (min_frac = ", format(min_frac), ") ",
@@ -248,10 +243,7 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
   } else {
     group_A <- .tfu_group_from_delta(O_mat, observed_ratio)
     if (sum(group_A) == 0L || sum(!group_A) == 0L) {
-      obs_frac <- rowMeans(O_mat != 0)
-      medf <- median(obs_frac, na.rm = TRUE)
-      group_A <- obs_frac >= medf
-      warning("Auto-grouping: adjusted `observed_ratio` since one group was empty.")
+      stop("Auto-grouping failed: one group empty. Discard this run or adjust observed_ratio.")
     }
   }
 
@@ -400,7 +392,7 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
   
   # Create fresh internal cluster
   ncpus <- max(1L, min(as.integer(ncpus), parallel::detectCores(logical = TRUE)))
-  cl <- parallel::makeCluster(ncpus)
+  cl <- parallel::makeCluster(ncpus, outfile = "")
   
   # Pin BLAS/OpenMP threads per worker (avoid oversubscription)
   .tfu_par_env$old_threads <- Sys.getenv(
@@ -473,7 +465,7 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
 #' @export
 asym_mean_L2_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_ratio = 1,
                               fve = 0.99, B = 5000,
-                              min_frac = 0.10, seed = 42, alpha = 0.05) {
+                              min_frac = 0.10, seed = NULL, alpha = 0.05) {
   prep <- .tfu_prepare_inputs(fd, X_obs, groups, observed_ratio)
   X_obs <- prep$X_obs; O_mat <- prep$O_mat; group_A <- prep$group_A; grid <- prep$grid
   n <- nrow(X_obs)
@@ -539,7 +531,7 @@ asym_mean_L2_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_r
 #' @export
 asym_mean_sup_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_ratio = 1,
                                fve = 0.99, B = 5000,
-                               min_frac = 0.10, seed = 42, alpha = 0.05,
+                               min_frac = 0.10, seed = NULL, alpha = 0.05,
                                compute_bands = TRUE, bands_only = FALSE) {
   prep <- .tfu_prepare_inputs(fd, X_obs, groups, observed_ratio)
   X_obs <- prep$X_obs; O_mat <- prep$O_mat; group_A <- prep$group_A; grid <- prep$grid
@@ -639,7 +631,7 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
                            min_frac = 0.10, alpha = 0.05,
                            parallel = TRUE,
                            ncpus = parallel::detectCores(logical = TRUE),
-                           seed = 42,
+                           seed = NULL,
                            stat = c("L2", "D"),
                            compute_bands = TRUE,
                            return_boot = FALSE,
@@ -647,6 +639,13 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
                            manage_backend = c("auto","force_pool","sequential"),
                            worker_blas_threads = 1L,
                            bands_only = FALSE) {
+  
+  on.exit({
+    try(foreach::registerDoSEQ(), silent=TRUE)
+    try(doRNG::registerDoRNG(NULL), silent=TRUE)
+    try(shutdown_parallel_tfu(), silent=TRUE)
+  }, add = TRUE)
+  
   stat <- match.arg(stat)
   manage_backend <- match.arg(manage_backend)
 
