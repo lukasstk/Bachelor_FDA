@@ -638,13 +638,16 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
                            chunk_size = NULL,
                            manage_backend = c("auto","force_pool","sequential"),
                            worker_blas_threads = 1L,
-                           bands_only = FALSE) {
+                           bands_only = FALSE, 
+                           cleanup = FALSE) {
   
-  on.exit({
-    try(foreach::registerDoSEQ(), silent=TRUE)
-    try(doRNG::registerDoRNG(NULL), silent=TRUE)
-    try(shutdown_parallel_tfu(), silent=TRUE)
-  }, add = TRUE)
+  if (isTRUE(cleanup)) {
+    on.exit({
+      try(foreach::registerDoSEQ(), silent = TRUE)
+      try(doRNG::registerDoRNG(NULL), silent = TRUE)
+      try(shutdown_parallel_tfu(), silent = TRUE)
+    }, add = TRUE)
+  }
   
   stat <- match.arg(stat)
   manage_backend <- match.arg(manage_backend)
