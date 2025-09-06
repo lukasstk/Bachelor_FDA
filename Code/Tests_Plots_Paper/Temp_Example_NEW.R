@@ -1,8 +1,8 @@
 # ===================== Setup & Packages =====================
 # Uses the NEW API (2025-08) for:
-#   asym_mean_L2_test(), asym_mean_sup_test()  [asymptotic]
 #   boot_mean_test()                            [bootstrap]
-# Legacy wrappers asym_conf_bands()/boot_conf_bands() are NOT used.
+#   asym_mean_L2_test(), asym_mean_sup_test()  [optional/asymptotic, not used for bands]
+# Konfidenzbänder werden unten explizit per Bootstrap erzeugt.
 
 suppressPackageStartupMessages({
   library(dplyr)
@@ -14,6 +14,8 @@ suppressPackageStartupMessages({
   library(doParallel)
   library(doRNG)
   library(foreach)
+  library(pbapply)   # pblapply()
+  # library(tf)      # optional; wir nutzen tf::tfd() qualifiziert
 })
 
 # ===================== 1) Tageskurven aus temp_graz ============================
@@ -61,47 +63,45 @@ df_long <- wide %>%
 
 fd <- tf::tfd(df_long, arg = "hour_num", id = "date", value = "temp")
 
-# ===================== 3) Tests & (asymptotische) Bänder =======================
+# ===================== 3) Tests & (BOOTSTRAP-)Bänder ===========================
 set.seed(2025)
 
-# (A) Asymptotischer L2‑Test (KL‑Mixture)
-res_L2 <- asym_mean_L2_test(
-  fd = fd, observed_ratio = 1, min_frac = 0.10, seed = 2025, fve = 0.99, B = 5000
+# (A) L2-Test (optional, ohne Bänder)
+res_L2 <- boot_mean_test(
+  fd = fd, observed_ratio = 1, min_frac = 0.10,
+  B = 5000, alpha = 0.05,
+  parallel = TRUE, stat = "L2",
+  compute_bands = FALSE, return_boot = FALSE
 )
 
-# (B) Asymptotischer Supremums‑Test; hier OHNE Bänder (leichtgewichtiger)
-res_sup <- asym_mean_sup_test(
-  fd = fd, observed_ratio = 1, min_frac = 0.10, seed = 2025, fve = 0.99,
-  B = 5000, compute_bands = TRUE
+# (B) Supremums-/D-Test MIT Bootstrap-Bändern (Konfidenzbänder via Bootstrap)
+res_sup <- boot_mean_test(
+  fd = fd, observed_ratio = 1, min_frac = 0.10,
+  B = 5000, alpha = 0.05,
+  parallel = TRUE, stat = "D",
+  compute_bands = TRUE,    # <-- Bänder per Bootstrap
+  return_boot = FALSE
 )
-
-# # (C) Nur Bänder (leichtgewichtiges Objekt) – ersetzt asym_conf_bands()
-# res_cb <- asym_mean_sup_test(
-#   fd = fd, observed_ratio = 1, min_frac = 0.10, seed = 2025, alpha = 0.05,
-#   compute_bands = TRUE, bands_only = TRUE
-# )
 
 # ===================== 4) Ergebnisse ===========================================
 n_total <- nrow(X_obs)
-# Info: Die Tests gruppieren intern automatisch über observed_ratio=1 (vollständig vs. unvollständig)
-# Für die Anzeige behalten wir die einfache Heuristik bei:
+
+# Einfache Heuristik zur Visualisierung: complete vs incomplete
 group_A <- rowMeans(!is.na(X_obs)) == 1
 n_A <- sum(group_A); n_B <- n_total - n_A
 
-m_asym <- as.integer(res_sup$parameter["m"])          # Anzahl Subdomain-Punkte im asym‑Test
-m_band <- length(res_sup$idx)                             # dito aus dem Band‑Objekt
+m_band <- length(res_sup$idx)  # Subdomain-Punkte aus den Bootstrap-Bändern
 
 cat("\n==== Ergebnisse (observed_ratio = 1 – complete vs incomplete) ====\n")
 cat("n =", n_total, "\n")
 cat("Größe Gruppe A/B:", n_A, "/", n_B, "\n")
-cat("Subdomain-Punkte: asym=", m_asym, "; bands=", m_band,
-    " | Fallback:", ifelse(is.null(res_sup$fallback), "none", res_sup$fallback), "\n")
+cat("Subdomain-Punkte (Bands) =", m_band, "\n")
 
 print(res_L2)
 print(res_sup)
 
 # ===================== 5) Plots ================================================
-# Einheitliche Slots (00:00 .. 23:30) – falls nicht mehr im Scope:
+# Einheitliche Slots (00:00 .. 23:30)
 slots48 <- sprintf("%02d:%02d", rep(0:23, each = 2), rep(c(0,30), 24))
 tick_idx <- seq(1, length(slots48), by = 6)  # Ticks alle 3h
 
@@ -121,7 +121,7 @@ p_groups <- ggplot(df_long_plot, aes(x = slot, y = temp, group = date, colour = 
   theme(legend.position = "bottom",
         axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
-# ---------- Rechte Seite: Diff + Bänder MIT LÜCKE -----------------------------
+# ---------- Rechte Seite: Diff + Bootstrap-Bänder MIT LÜCKE --------------------
 # Sortiere idx und bilde Blöcke zusammenhängender Slots (Lücke trennt Blöcke)
 o          <- order(res_sup$idx)
 idx_sorted <- res_sup$idx[o]
@@ -157,30 +157,41 @@ p_right <- ggplot(df_cb, aes(x = time)) +
 # Doppel-Plot anzeigen
 p_left + p_right
 
+# ==== Figure-7-Style (Bootstrap-p-Werte über m) – FIX: Gruppen manuell/fix ====
 
-
-# ===================== 6) Figure-7-Style (Bootstrap-p-Werte über m) =============
 set.seed(2025)
 B <- 10000
-m_grid <- c(24, 27, 30, 32, 33, 36, 38, 40, 43, 45)
+m_grid <- c(24,26,28,31,33,36,38,40,43,45)
 
-avail <- colSums(!is.na(X_obs))
+# Wichtig: Gruppen (complete vs incomplete) werden EINMAL auf dem vollen Gitter
+# bestimmt und eingefroren. Andernfalls könnten Kurven durch Subgrids ihre
+# Gruppenzugehörigkeit wechseln
+
+# 1) Gruppen EINFRIEREN auf dem vollen Gitter (48 Slots):
+groups_fixed <- rowMeans(!is.na(X_obs)) == 1    
+
+# 2) Slots nach Gesamtverfügbarkeit sortieren (Paper-Ansatz)
+avail    <- colSums(!is.na(X_obs))
 slot_idx <- seq_len(ncol(X_obs))
 
-res_list <- lapply(m_grid, function(m) {
-  # wähle die m Slots mit den meisten Beobachtungen (Paper-Ansatz)
+# 3) p-Werte über m berechnen – mit fixen Gruppen + min_frac = 0
+res_list <- pblapply(m_grid, function(m) {
+  # Top-m Slots nach Gesamt-Verfügbarkeit
   idx_top <- order(-avail, slot_idx)[1:m] |> sort()
   X_sub   <- X_obs[, idx_top, drop = FALSE]
   
   # Bootstrap-Tests auf diesem Subgrid
+  #  - groups = groups_fixed (fixe Gruppenzugehörigkeit)
+  #  - min_frac = 0 (paper-konform, keine zusätzliche 10%-Hürde), opt. hab die Hürde drin gelassen
   rb_L2 <- boot_mean_test(
-    X_obs = X_sub, B = B, min_frac = 0, seed = 2025,  # min_frac=0: keine 10%-Hürde
-    parallel = TRUE, stat = "L2", compute_bands = FALSE, return_boot = FALSE
-  )
-  rb_D  <- boot_mean_test(
-    X_obs = X_sub, B = B, min_frac = 0, seed = 2025,
-    parallel = TRUE, stat = "D", compute_bands = FALSE, return_boot = FALSE
-  )
+    X_obs = X_sub, groups = groups_fixed,
+    B = B,parallel = TRUE, stat = "L2",
+    compute_bands = FALSE)
+  
+  rb_D <- boot_mean_test(
+    X_obs = X_sub, groups = groups_fixed,
+    B = B, parallel = TRUE, stat = "D",
+    compute_bands = FALSE)
   
   data.frame(
     m    = m,
@@ -189,10 +200,17 @@ res_list <- lapply(m_grid, function(m) {
   )
 })
 
+# 4) Aufbereiten & Tabelle
 df_p <- dplyr::bind_rows(res_list) |>
   tidyr::pivot_longer(cols = c(p_L2, p_D), names_to = "test", values_to = "p")
 
-# Plot im Figure-7-Stil
+df_table <- df_p |>
+  tidyr::pivot_wider(names_from = test, values_from = p) |>
+  dplyr::rename(`T[mu,L2]` = p_L2, `T[mu,D]` = p_D)
+
+print(df_table, n = Inf)
+
+# 5) Plot im Figure-7-Stil
 p_fig7 <- ggplot(df_p, aes(x = m, y = p, shape = test)) +
   geom_point(size = 3) +
   geom_hline(yintercept = 0.05, linetype = "dashed") +
@@ -201,13 +219,11 @@ p_fig7 <- ggplot(df_p, aes(x = m, y = p, shape = test)) +
     labels = c(p_L2 = expression(T[mu*","*L^2]),
                p_D  = expression(T[mu*","*D]))
   ) +
-  scale_x_continuous(limits = c(min(m_grid), max(m_grid)),
-                     breaks = m_grid,
+  scale_x_continuous(limits = c(min(m_grid)-1, max(m_grid)+1),
+                     breaks = seq(25,45, by = 5),
                      expand = expansion(mult = c(0, 0))) +
   coord_cartesian(ylim = c(0, 0.5)) +
   labs(x = "number of grid points in I", y = "p-values", shape = NULL) +
   theme_classic(base_size = 14)
 
 print(p_fig7)
-
-

@@ -12,6 +12,7 @@ library(ggplot2)
 library(patchwork)
 library(foreach)
 library(doRNG)
+library(pbapply)
 
 set.seed(42)
 
@@ -218,7 +219,6 @@ p_left + p_right
 library(dplyr)
 library(ggplot2)
 
-set.seed(2025)
 
 # ---- Simulation settings ----
 n        <- 100                 # sample size per run (wie im Paper)
@@ -226,7 +226,7 @@ m_grid   <- 100                 # grid points
 grid     <- seq(0, 1, length.out = m_grid)
 alpha    <- 0.05
 b_vals   <- seq(1.0, 2.0, by = 0.1)   # vary b
-n_sims   <- 1000                      # für Speed; Paper ~5000
+n_sims   <- 1000                    # für Speed; Paper ~5000
 
 # ---- Helpers ----
 simulate_bm <- function(grid) {
@@ -236,7 +236,7 @@ simulate_bm <- function(grid) {
 }
 
 # MNAR censoring: observe only when a < X(t) < b  (a = -1)
-make_O_mnar_ab <- function(x_row, a = -1, b = 2) {
+make_missing_pattern <- function(x_row, a = -1, b = 2) {
   as.integer(x_row > a & x_row < b)
 }
 
@@ -244,7 +244,7 @@ one_run <- function(b_now) {
   # 1) simulate n Brownian paths on grid
   bm_mat <- t(replicate(n, simulate_bm(grid)))
   # 2) build observation mask under MNAR censoring
-  O_mat  <- t(apply(bm_mat, 1L, make_O_mnar_ab, a = -1, b = b_now))
+  O_mat  <- t(apply(bm_mat, 1L, make_missing_pattern, a = -1, b = b_now))
   storage.mode(O_mat) <- "integer"
   
   # 3) observed matrix with NAs
@@ -253,11 +253,11 @@ one_run <- function(b_now) {
   
   # 4) keine expliziten Gruppen – Auto-Gruppierung (observed_ratio=1)
   p_L2 <- tryCatch(
-    asym_mean_L2_test(X_obs = X_obs, B = 2000)$p.value,
+    asym_mean_L2_test(X_obs = X_obs, B = 10000)$p.value,
     error = function(e) NA_real_
   )
   p_D  <- tryCatch(
-    asym_mean_sup_test(X_obs = X_obs, B = 2000, compute_bands = FALSE)$p.value,
+    asym_mean_sup_test(X_obs = X_obs, B = 10000, compute_bands = FALSE)$p.value,
     error = function(e) NA_real_
   )
   
@@ -265,23 +265,21 @@ one_run <- function(b_now) {
 }
 
 # ---- Monte Carlo over b ----
-res_list <- vector("list", length(b_vals))
-names(res_list) <- sprintf("b=%.1f", b_vals)
-
-for (j in seq_along(b_vals)) {
-  b_now <- b_vals[j]
-  ps <- replicate(n_sims, one_run(b_now))
-  # ps is 2 x n_sims: [1,] = p_L2, [2,] = p_D
-  rej_L2 <- mean(ps[1, ] < alpha, na.rm = TRUE)
-  rej_D  <- mean(ps[2, ] < alpha, na.rm = TRUE)
+res_list <- pblapply(b_vals, function(b_now) {
+  # 2 x n_sims: [1,] = p_L2, [2,] = p_D
+  ps  <- pbreplicate(n_sims, one_run(b_now))
+  rej <- rowMeans(ps < alpha, na.rm = TRUE)  # c(L2, D)
   
-  res_list[[j]] <- data.frame(
-    b   = b_now,
+  cat(sprintf("b=%.1f  ->  rej L2=%.3f,  rej D=%.3f\n",
+              b_now, rej[1], rej[2]))
+  
+  data.frame(
+    b    = b_now,
     test = c("T[mu,L^2]", "T[mu,D]"),
-    rej = c(rej_L2, rej_D)
+    rej  = rej,
+    row.names = NULL
   )
-  cat(sprintf("b=%.1f  ->  rej L2=%.3f,  rej D=%.3f\n", b_now, rej_L2, rej_D))
-}
+})
 
 res_df <- dplyr::bind_rows(res_list)
 
