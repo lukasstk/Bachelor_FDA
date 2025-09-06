@@ -2,30 +2,38 @@
 suppressPackageStartupMessages({ library(tidyfun); library(tf) })
 set.seed(123)
 
+# ======================================================================
 # Daten + Grid
+# ======================================================================
 data("dti_df")
 cca_all <- dti_df$cca
 n        <- 50
 grid_len <- 101
 grid     <- seq(0, 1, length.out = grid_len)
 
-cca_n <- cca_all[seq_len(min(n, nrow(cca_all))), grid, interpolate = TRUE]
+cca_n <- cca_all[seq_len(min(n, length(cca_all))), grid, interpolate = TRUE]
 rownames(cca_n) <- paste0("ID", seq_len(nrow(cca_n)))
 X_true <- as.matrix(cca_n)
 n <- nrow(X_true); m <- ncol(X_true)
 
-# ---- Parameter für Missingness ------------------------------------------------
+# ======================================================================
+# Parameter für Missingness
+# ======================================================================
 MISS_FRAC   <- 0.30   # Anteil fehlender Punkte je unvollständiger Kurve
 P_COMPLETE  <- 0.50   # Anteil kompletter Kurven
 
-# ---- MCAR: zusammenhängendes Intervall mit genau MISS_FRAC --------------------
+# ======================================================================
+# MCAR: zusammenhängendes Intervall mit genau MISS_FRAC
+# ======================================================================
 algo_mcar_mask <- function(m, miss_frac = 0.30) {
   k <- max(1L, min(m - 1L, round(miss_frac * m)))
   start <- sample.int(m - k + 1L, 1L)
   O <- rep(1L, m); O[start:(start + k - 1L)] <- 0L; O
 }
 
-# ---- MNAR: wertsensitiv (Top-k Punkte nach Score) mit exakt MISS_FRAC --------
+# ======================================================================
+# MNAR: wertsensitiv (Top-k Punkte nach Score) mit exakt MISS_FRAC
+# ======================================================================
 algo_mnar_mask <- function(x_row, miss_frac = 0.30, beta = 5, jitter_sd = 0.05,
                            block_k = 0L) {
   x <- as.numeric(x_row)
@@ -36,7 +44,7 @@ algo_mnar_mask <- function(x_row, miss_frac = 0.30, beta = 5, jitter_sd = 0.05,
   m <- length(x)
   k_target <- max(1L, min(m - 1L, round(miss_frac * m)))
   
-  score <- beta * z + rnorm(m, sd = jitter_sd)  # höherer Score => eher fehlend
+  score <- beta * z + rnorm(m, sd = jitter_sd)
   idx   <- order(score, decreasing = TRUE)[1:k_target]
   
   if (block_k > 0L) {
@@ -50,7 +58,9 @@ algo_mnar_mask <- function(x_row, miss_frac = 0.30, beta = 5, jitter_sd = 0.05,
   O <- rep(1L, m); O[idx] <- 0L; O
 }
 
-# ---- Helfer: X_obs erzeugen ---------------------------------------------------
+# ======================================================================
+# Helfer: X_obs erzeugen
+# ======================================================================
 make_X_obs <- function(X_true, pattern = c("MCAR","MNAR"),
                        p_complete = 0.5, miss_frac = 0.30,
                        beta = 5, block_k = 0L) {
@@ -70,11 +80,13 @@ make_X_obs <- function(X_true, pattern = c("MCAR","MNAR"),
   list(X_obs = X_obs, is_complete = rowSums(is.na(X_obs)) == 0)
 }
 
+# ======================================================================
 # Zwei einmalige Datensätze
+# ======================================================================
 out_mcar <- make_X_obs(X_true, "MCAR", p_complete = P_COMPLETE, miss_frac = MISS_FRAC)
 out_mnar <- make_X_obs(X_true, "MNAR", p_complete = P_COMPLETE, miss_frac = MISS_FRAC, beta = 5, block_k = 0L)
 
-# --- (optional) kurze Kontrolle der realisierten Anteile -----------------------
+# (optional) Kontrolle der realisierten Anteile
 check_frac <- function(X) c(
   overall = mean(is.na(X)),
   mean_per_curve = mean(rowMeans(is.na(X))),
@@ -83,25 +95,42 @@ check_frac <- function(X) c(
 print(rbind(MCAR = check_frac(out_mcar$X_obs),
             MNAR = check_frac(out_mnar$X_obs)))
 
-# --- Tests je Pattern ----------------------------------------------------------
+# ======================================================================
+# Tests je Pattern – NEUE FUNKTIONEN
+#   - asym_mean_L2_test()       (vorher tfu_algo1_L2_test)
+#   - asym_mean_sup_test()      (vorher tfu_algo2_sup_test)
+#   - boot_mean_test(stat=...)  (vorher tfu_algo5_bootstrap)
+# ======================================================================
 B_asym <- 2000; B_boot <- 2000
-res_mcar_L2 <- tfu_algo1_L2_test(X_obs = out_mcar$X_obs, B = B_asym, seed = 1001)
-res_mcar_D  <- tfu_algo2_sup_test(X_obs = out_mcar$X_obs, B = B_asym, seed = 1002)
-res_mcar_BT <- tfu_algo5_bootstrap(X_obs = out_mcar$X_obs, B = B_boot, seed = 1003)
-res_mnar_L2 <- tfu_algo1_L2_test(X_obs = out_mnar$X_obs, B = B_asym, seed = 2001)
-res_mnar_D  <- tfu_algo2_sup_test(X_obs = out_mnar$X_obs, B = B_asym, seed = 2002)
-res_mnar_BT <- tfu_algo5_bootstrap(X_obs = out_mnar$X_obs, B = B_boot, seed = 2003)
+
+# MCAR
+res_mcar_L2 <- asym_mean_L2_test(X_obs = out_mcar$X_obs, B = B_asym)
+res_mcar_D  <- asym_mean_sup_test(X_obs = out_mcar$X_obs, B = B_asym, compute_bands = TRUE)
+res_mcar_BT_L2 <- boot_mean_test(X_obs = out_mcar$X_obs, B = B_boot, stat = "L2",
+                                 parallel = FALSE, compute_bands = FALSE)
+res_mcar_BT_D  <- boot_mean_test(X_obs = out_mcar$X_obs, B = B_boot, stat = "D",
+                                 parallel = FALSE, compute_bands = TRUE)
+
+# MNAR
+res_mnar_L2 <- asym_mean_L2_test(X_obs = out_mnar$X_obs, B = B_asym)
+res_mnar_D  <- asym_mean_sup_test(X_obs = out_mnar$X_obs, B = B_asym, compute_bands = TRUE)
+res_mnar_BT_L2 <- boot_mean_test(X_obs = out_mnar$X_obs, B = B_boot, stat = "L2",
+                                 parallel = FALSE, compute_bands = FALSE)
+res_mnar_BT_D  <- boot_mean_test(X_obs = out_mnar$X_obs, B = B_boot, stat = "D",
+                                 parallel = FALSE, compute_bands = TRUE)
 
 results <- data.frame(
   pattern   = c("MCAR", "MNAR"),
-  asym_L2_p = c(res_mcar_L2$p_value, res_mnar_L2$p_value),
-  asym_D_p  = c(res_mcar_D$p_value,  res_mnar_D$p_value),
-  boot_L2_p = c(res_mcar_BT$p_L2,    res_mnar_BT$p_L2),
-  boot_D_p  = c(res_mcar_BT$p_D,     res_mnar_BT$p_D)
+  asym_L2_p = c(res_mcar_L2$p.value, res_mnar_L2$p.value),
+  asym_D_p  = c(res_mcar_D$p.value,  res_mnar_D$p.value),
+  boot_L2_p = c(res_mcar_BT_L2$p.value, res_mnar_BT_L2$p.value),
+  boot_D_p  = c(res_mcar_BT_D$p.value,  res_mnar_BT_D$p.value)
 )
 print(results, row.names = FALSE)
 
-# ------------------------- Visualisierung --------------------------------------
+# ======================================================================
+# Visualisierung (diff & Simultanbänder aus den neuen Methoden)
+# ======================================================================
 y_range <- range(c(out_mcar$X_obs, out_mnar$X_obs), na.rm = TRUE)
 par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
 
@@ -129,48 +158,48 @@ plot_panel <- function(title, X_obs, is_complete) {
 
 plot_panel("MCAR: complete=grau, incomplete=schwarz", out_mcar$X_obs, out_mcar$is_complete)
 plot_panel("MNAR: complete=grau, incomplete=schwarz", out_mnar$X_obs, out_mnar$is_complete)
-
 par(mfrow = c(1, 1))
 
-# ================================================================
-# Type-I-Error @ n = 50 für MCAR & MNAR (30% Missing je INcomplete)
-# Voraussetzungen:
-# - dti_df geladen (tidyfun, tf)
-# - algo_mcar_mask(), algo_mnar_mask(), make_X_obs() definiert (wie oben)
-# - tfu_algo1_L2_test(), tfu_algo2_sup_test(), tfu_algo5_bootstrap() verfügbar
-# ================================================================
+# Optional: diff + Bands (aus boot_mean_test stat="D")
+if (!is.null(res_mcar_BT_D$lower)) {
+  plot(res_mcar_BT_D$grid, res_mcar_BT_D$diff, type = "l", xlab = "t", ylab = "mu_A - mu_B",
+       main = "MCAR: Diff & 1-α Simultanbänder (Bootstrap D)")
+  lines(res_mcar_BT_D$grid, res_mcar_BT_D$lower, lty = 2)
+  lines(res_mcar_BT_D$grid, res_mcar_BT_D$upper, lty = 2)
+}
+
+if (!is.null(res_mnar_BT_D$lower)) {
+  plot(res_mnar_BT_D$grid, res_mnar_BT_D$diff, type = "l", xlab = "t", ylab = "mu_A - mu_B",
+       main = "MNAR: Diff & 1-α Simultanbänder (Bootstrap D)")
+  lines(res_mnar_BT_D$grid, res_mnar_BT_D$lower, lty = 2)
+  lines(res_mnar_BT_D$grid, res_mnar_BT_D$upper, lty = 2)
+}
+
+# ======================================================================
+# Type-I-Error @ n = 50 (und optional n = 100) – NEUE FUNKTIONEN
+# ======================================================================
 
 suppressPackageStartupMessages({ library(tidyfun); library(tf) })
 
 # Zufällige Stichprobe von n Kurven aus dti_df$cca auf gleichmäßigem Grid
 .get_X_true <- function(n = 50, grid_len = 101) {
-  # dti_df laden
   data("dti_df", envir = environment())
   cca_all <- dti_df$cca
-  
-  # Anzahl verfügbarer Kurven robust bestimmen
-  n_all <- length(cca_all)              # <-- statt nrow(cca_all)
+  n_all <- length(cca_all)
   if (is.null(n_all) || n_all < 1) stop("Keine Kurven in dti_df$cca gefunden.")
-  
-  # Zufallsstichprobe von max. n Kurven
   idx  <- sample.int(n_all, size = min(n, n_all), replace = FALSE)
-  
-  # gleichmäßiges Grid und Interpolation
   grid <- seq(0, 1, length.out = grid_len)
   cca_n <- cca_all[idx, grid, interpolate = TRUE]
-  
-  # Matrix der Funktionswerte zurückgeben
   rownames(cca_n) <- paste0("ID", seq_len(length(idx)))
   list(X_true = as.matrix(cca_n), grid = grid)
 }
 
-# Ein Replikat: p<alpha-Indikatoren der vier Tests
+# Ein Replikat: p<alpha-Indikatoren der vier Tests (neu)
 .one_rep <- function(pattern = c("MCAR","MNAR"),
                      alpha = 0.05, B_asym = 2000, B_boot = 2000,
                      p_complete = 0.5, miss_frac = 0.30,
-                     beta = 5, block_k = 0L, grid_len = 101, seed = 1) {
+                     beta = 5, block_k = 0L, grid_len = 101) {
   pattern <- match.arg(pattern)
-  set.seed(seed)
   sam <- .get_X_true(n = 50, grid_len = grid_len)
   X_true <- sam$X_true
   
@@ -181,26 +210,28 @@ suppressPackageStartupMessages({ library(tidyfun); library(tf) })
                beta = beta, block_k = block_k)
   }
   
-  # Tests: Algo 1 (L2), Algo 2 (Sup), Algo 5 (Bootstrap L2 & D)
-  res_L2 <- tfu_algo1_L2_test(X_obs = out$X_obs, B = B_asym, seed = seed + 11)
-  res_D  <- tfu_algo2_sup_test(X_obs = out$X_obs, B = B_asym, seed = seed + 12)
-  res_BT <- tfu_algo5_bootstrap(X_obs = out$X_obs, B = B_boot, seed = seed + 13)
+  # NEU: Tests aus mcar.test
+  res_L2 <- asym_mean_L2_test(X_obs = out$X_obs, B = B_asym)
+  res_D  <- asym_mean_sup_test(X_obs = out$X_obs, B = B_asym)
+  res_BT_L2 <- boot_mean_test(X_obs = out$X_obs, B = B_boot,
+                              stat = "L2", parallel = FALSE, compute_bands = FALSE)
+  res_BT_D  <- boot_mean_test(X_obs = out$X_obs, B = B_boot,
+                              stat = "D",  parallel = FALSE, compute_bands = FALSE)
   
   c(
-    asym_L2 = as.numeric(res_L2$p_value < alpha),
-    asym_D  = as.numeric(res_D$p_value  < alpha),
-    boot_L2 = as.numeric(res_BT$p_L2    < alpha),
-    boot_D  = as.numeric(res_BT$p_D     < alpha)
+    asym_L2 = as.numeric(res_L2$p.value      < alpha),
+    asym_D  = as.numeric(res_D$p.value       < alpha),
+    boot_L2 = as.numeric(res_BT_L2$p.value   < alpha),
+    boot_D  = as.numeric(res_BT_D$p.value    < alpha)
   )
 }
 
 # Type-I-Error schätzen (Anteil Zurückweisungen unter H0)
 run_type1 <- function(pattern = c("MCAR","MNAR"), n = 50,
-                          R = 1000, alpha = 0.05,
-                          B_asym = 2000, B_boot = 2000,
-                          p_complete = 0.5, miss_frac = 0.30,
-                          beta = 5, block_k = 0L, grid_len = 101,
-                          base_seed = 42, quiet = TRUE) {
+                      R = 1000, alpha = 0.05,
+                      B_asym = 2000, B_boot = 2000,
+                      p_complete = 0.5, miss_frac = 0.30,
+                      beta = 5, block_k = 0L, grid_len = 101, quiet = TRUE) {
   pattern <- match.arg(pattern)
   if (quiet) {
     old <- getOption("warn"); options(warn = 1); on.exit(options(warn = old), add = TRUE)
@@ -212,8 +243,7 @@ run_type1 <- function(pattern = c("MCAR","MNAR"), n = 50,
     M[r, ] <- .one_rep(
       pattern = pattern, alpha = alpha, B_asym = B_asym, B_boot = B_boot,
       p_complete = p_complete, miss_frac = miss_frac,
-      beta = beta, block_k = block_k, grid_len = grid_len,
-      seed = base_seed + 1000 * r
+      beta = beta, block_k = block_k, grid_len = grid_len
     )
     setTxtProgressBar(pb, r)
   }
@@ -229,22 +259,12 @@ run_type1 <- function(pattern = c("MCAR","MNAR"), n = 50,
   )
 }
 
-# ---------------------- AUSFÜHREN (n = 50) ------------------------------------
-# Hinweis: R=1000 und B=2000/2000 sind rechenintensiv. Für einen Probelauf:
-# R=200 oder B_asym/B_boot kleiner wählen und dann hochdrehen.
-
+# ---------------------- AUSFÜHREN (n = 50 und n = 100) -------------------------
 set.seed(2025)
-res_mcar_50 <- run_type1("MCAR", n = 50, R = 100, B_asym = 2000, B_boot = 2000,
+res_mcar_50  <- run_type1("MCAR", n = 50,  R = 100, B_asym = 2000, B_boot = 2000,
                           p_complete = 0.5, miss_frac = 0.30)
-
 res_mcar_100 <- run_type1("MCAR", n = 100, R = 100, B_asym = 2000, B_boot = 2000,
                           p_complete = 0.5, miss_frac = 0.30)
 
-
 type1_table_n50 <- rbind(res_mcar_50, res_mcar_100)
-type1_table_n50
-type1_table_n50 <- rbind(res_mcar_50, res_mcar_100)
-# > type1_table_n50
-# pattern   n asym_L2 asym_D boot_L2 boot_D
-# 1    MCAR  50    0.03   0.03    0.03   0.02
-# 2    MCAR 100    0.03   0.03    0.03   0.02
+print(type1_table_n50)
