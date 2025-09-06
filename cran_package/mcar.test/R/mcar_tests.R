@@ -50,11 +50,18 @@ NULL
 #' Stop internal parallel backend and restore thread settings
 #' @keywords internal
 #' @noRd
-shutdown_parallel_tfu <- function() {
+.shutdown_parallel_tfu <- function() {
+  # erst Backend entkoppeln (verhindert "stale sockets")
+  try(foreach::registerDoSEQ(), silent = TRUE)
+  try(doRNG::registerDoRNG(NULL), silent = TRUE)
+  # implizite Cluster beenden (falls woanders erstellt)
+  suppressWarnings(try(doParallel::stopImplicitCluster(), silent = TRUE))
+  # eigenen Pool beenden
   if (!is.null(.tfu_par_env$cl)) {
     try(parallel::stopCluster(.tfu_par_env$cl), silent = TRUE)
     .tfu_par_env$cl <- NULL
   }
+  # BLAS/OpenMP Threads zurücksetzen
   olds <- .tfu_par_env$old_threads
   if (!is.null(olds)) {
     if (!is.na(olds[1])) Sys.setenv(OPENBLAS_NUM_THREADS = olds[1])
@@ -69,13 +76,10 @@ shutdown_parallel_tfu <- function() {
 #' @keywords internal
 #' @noRd
 .tfu_reset_backend <- function() {
-  # deregister foreach backend to avoid talking to stale sockets
   try(foreach::registerDoSEQ(), silent = TRUE)
-  # kill our internal cluster if any and restore threads
-  try(shutdown_parallel_tfu(), silent = TRUE)
-  # clear doRNG association
   try(doRNG::registerDoRNG(NULL), silent = TRUE)
-  # set robust RNG kind on master (fresh start)
+  suppressWarnings(try(doParallel::stopImplicitCluster(), silent = TRUE))
+  try(.shutdown_parallel_tfu(), silent = TRUE)
   suppressWarnings(RNGkind("L'Ecuyer-CMRG"))
   set.seed(42)
   invisible(TRUE)
@@ -112,7 +116,7 @@ shutdown_parallel_tfu <- function() {
 .onUnload <- function(libpath) {
   try(foreach::registerDoSEQ(), silent = TRUE)
   try(doRNG::registerDoRNG(NULL), silent = TRUE)
-  try(shutdown_parallel_tfu(), silent = TRUE)
+  try(.shutdown_parallel_tfu(), silent = TRUE)
 }
 
 # -- Bootstrap helper up-front ----------------
@@ -614,6 +618,7 @@ asym_mean_sup_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_
 #' @param chunk_size Number of bootstrap replicates per foreach task.
 #' @param manage_backend Backend control (`"auto"`, `"force_pool"`, `"sequential"`).
 #' @param worker_blas_threads BLAS/OpenMP threads per worker (internal pool only).
+#' @param cleanup Logical: if TRUE, detach foreach/doRNG and stop the internal pool on exit.
 #' @param bands_only Return only the band payload?
 #' @return `htest` (with extras) or a light band list.
 #' @examples
@@ -645,7 +650,7 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
     on.exit({
       try(foreach::registerDoSEQ(), silent = TRUE)
       try(doRNG::registerDoRNG(NULL), silent = TRUE)
-      try(shutdown_parallel_tfu(), silent = TRUE)
+      try(.shutdown_parallel_tfu(), silent = TRUE)
     }, add = TRUE)
   }
   
@@ -744,6 +749,10 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
   # --- robust run with single automatic retry on stale backend ---
   boot_mat <- tryCatch(
     .run_boot(manage_backend_mode = manage_backend, ncpus_eff = ncpus),
+    interrupt = function(e) {
+      .tfu_reset_backend()
+      stop("Abbruch durch Benutzer: Backend bereinigt; erneutes Ausführen ist sofort möglich.", call. = FALSE)
+    },
     error = function(e) e
   )
   if (inherits(boot_mat, "error") && .tfu_is_worker_init_error(boot_mat)) {
@@ -751,6 +760,10 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
     boot_mat <- tryCatch(
       .run_boot(manage_backend_mode = "force_pool",
                 ncpus_eff = max(1L, parallel::detectCores(logical = TRUE) - 1L)),
+      interrupt = function(e) {
+        .tfu_reset_backend()
+        stop("Abbruch durch Benutzer: Backend bereinigt; erneutes Ausführen ist sofort möglich.", call. = FALSE)
+      },
       error = function(e) e
     )
   }
