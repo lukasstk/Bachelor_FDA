@@ -12,7 +12,7 @@ asym_mean_L2_test(
   fve = 0.99,
   B = 5000,
   min_frac = 0.1,
-  seed = 42,
+  seed = NULL,
   alpha = 0.05
 )
 }
@@ -49,7 +49,7 @@ m <- 30; n <- 20
 grid <- seq(0, 1, length.out = m)
 bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(m-1, sd = sqrt(d)))) }
 X  <- t(replicate(n, bm(grid)))
-# Introduce simple censoring (MNAR-ish): observe only when -1 < X < 2
+# Introduce simple censoring (MNAR): observe only when -1 < X < 2
 O  <- 1L * (X > -1 & X < 2); X[O == 0L] <- NA_real_
 # No groups supplied -> auto-grouping by observed_ratio
 h <- asym_mean_L2_test(X_obs = X, B = 1000, seed = 1)

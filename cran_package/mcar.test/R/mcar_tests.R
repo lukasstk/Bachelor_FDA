@@ -51,17 +51,17 @@ NULL
 #' @keywords internal
 #' @noRd
 .shutdown_parallel_tfu <- function() {
-  # erst Backend entkoppeln (verhindert "stale sockets")
+  # first detach backend (prevents "stale sockets")
   try(foreach::registerDoSEQ(), silent = TRUE)
   try(doRNG::registerDoRNG(NULL), silent = TRUE)
-  # implizite Cluster beenden (falls woanders erstellt)
+  # stop implicit cluster (if created elsewhere)
   suppressWarnings(try(doParallel::stopImplicitCluster(), silent = TRUE))
-  # eigenen Pool beenden
+  # stop own pool
   if (!is.null(.tfu_par_env$cl)) {
     try(parallel::stopCluster(.tfu_par_env$cl), silent = TRUE)
     .tfu_par_env$cl <- NULL
   }
-  # BLAS/OpenMP Threads zurücksetzen
+  # Reset BLAS/OpenMP threads
   olds <- .tfu_par_env$old_threads
   if (!is.null(olds)) {
     if (!is.na(olds[1])) Sys.setenv(OPENBLAS_NUM_THREADS = olds[1])
@@ -743,15 +743,15 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
       }
       out
     }
-    boot_mat  # <— explizit zurückgeben (oder einfach als letzte Zeile stehen lassen)
-  }           # <— WICHTIG: .run_boot() HIER SCHLIESSEN!
+    boot_mat  
+  }           
   
   # --- robust run with single automatic retry on stale backend ---
   boot_mat <- tryCatch(
     .run_boot(manage_backend_mode = manage_backend, ncpus_eff = ncpus),
     interrupt = function(e) {
       .tfu_reset_backend()
-      stop("Abbruch durch Benutzer: Backend bereinigt; erneutes Ausführen ist sofort möglich.", call. = FALSE)
+      stop("Aborted by user: backend cleaned up; re-execution is possible immediately.", call. = FALSE)
     },
     error = function(e) e
   )
@@ -762,7 +762,7 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
                 ncpus_eff = max(1L, parallel::detectCores(logical = TRUE) - 1L)),
       interrupt = function(e) {
         .tfu_reset_backend()
-        stop("Abbruch durch Benutzer: Backend bereinigt; erneutes Ausführen ist sofort möglich.", call. = FALSE)
+        stop("Aborted by user: backend cleaned up; re-execution is immediately possible.", call. = FALSE)
       },
       error = function(e) e
     )

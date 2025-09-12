@@ -12,7 +12,7 @@ asym_mean_sup_test(
   fve = 0.99,
   B = 5000,
   min_frac = 0.1,
-  seed = 42,
+  seed = NULL,
   alpha = 0.05,
   compute_bands = TRUE,
   bands_only = FALSE

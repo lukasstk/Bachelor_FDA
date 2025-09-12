@@ -14,14 +14,15 @@ boot_mean_test(
   alpha = 0.05,
   parallel = TRUE,
   ncpus = parallel::detectCores(logical = TRUE),
-  seed = 42,
+  seed = NULL,
   stat = c("L2", "D"),
   compute_bands = TRUE,
   return_boot = FALSE,
   chunk_size = NULL,
   manage_backend = c("auto", "force_pool", "sequential"),
   worker_blas_threads = 1L,
-  bands_only = FALSE
+  bands_only = FALSE,
+  cleanup = FALSE
 )
 }
 \arguments{
@@ -58,6 +59,8 @@ boot_mean_test(
 \item{worker_blas_threads}{BLAS/OpenMP threads per worker (internal pool only).}
 
 \item{bands_only}{Return only the band payload?}
+
+\item{cleanup}{Logical: if TRUE, detach foreach/doRNG and stop the internal pool on exit.}
 }
 \value{
 \code{htest} (with extras) or a light band list.
@@ -74,7 +77,6 @@ grid <- seq(0, 1, length.out = m)
 bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(m-1, sd = sqrt(d)))) }
 X  <- t(replicate(n, bm(grid)))
 O  <- 1L * (X > -1 & X < 2); X[O == 0L] <- NA_real_
-# keep small B so examples run fast on CRAN
 h <- boot_mean_test(X_obs = X, stat = "D", B = 100, parallel = FALSE, seed = 1)
 h$p.value
 }
