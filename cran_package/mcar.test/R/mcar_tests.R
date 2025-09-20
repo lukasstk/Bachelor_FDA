@@ -81,7 +81,6 @@ NULL
   suppressWarnings(try(doParallel::stopImplicitCluster(), silent = TRUE))
   try(.shutdown_parallel_tfu(), silent = TRUE)
   suppressWarnings(RNGkind("L'Ecuyer-CMRG"))
-  set.seed(42)
   invisible(TRUE)
 }
 
@@ -174,20 +173,10 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
   )
   if (!is.matrix(X_try)) stop("`as.matrix(fd)` did not return a matrix.", call. = FALSE)
   if (ncol(X_try) < 2L) stop("`fd` has fewer than 2 support points (ncol < 2).", call. = FALSE)
-
-  cn <- colnames(X_try)
-  g  <- suppressWarnings(as.numeric(cn))
-  if (is.null(cn) || any(is.na(g))) {
-    g <- seq(0, 1, length.out = ncol(X_try))
-    warning("Grid could not be safely read from `fd` - falling back to seq(0,1,length.out=m).")
-  } else {
-    if (anyDuplicated(g)) warning("`fd` grid contains duplicates - columns will be sorted increasingly.")
-    if (is.unsorted(g)) {
-      o <- order(g); g <- g[o]; X_try <- X_try[, o, drop = FALSE]
-      warning("`fd` grid was not increasing - grid and columns were sorted internally.")
-    }
-  }
+  
+  g <- tf::tf_arg(fd)   
   storage.mode(X_try) <- "numeric"
+  
   list(X_obs = X_try, grid = g)
 }
 
@@ -319,22 +308,88 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
   list(lam = lam, phi = phi, w = w)
 }
 
+#' Functional mean estimate
+#' @keywords internal
+#' @noRd
+.tfd_mean_function <- function(values, grid) {
+  tf::tfd(matrix(values, nrow = 1), arg = grid)
+}
+
+#' Functional confidence bands
+#'
+#' Pointwise bands for L2, simultaneous bands for Sup.
+#'
+#' @keywords internal
+#' @noRd
+.tfd_conf_band <- function(stat, diff, W, n, alpha, grid, method = c("asymptotic","bootstrap")) {
+  method <- match.arg(method)
+  
+  if (identical(stat, "L2")) {
+    if (method == "asymptotic") {
+      # --- Asymptotic (Normal approximation based on test stat draws) ---
+      se <- sd(W)
+      halfwidth <- qnorm(1 - alpha/2) * se
+      lower <- diff - halfwidth
+      upper <- diff + halfwidth
+    } else {
+      # --- Bootstrap (pointwise bands based on bootstrap resamples) ---
+      # W expected to be a matrix: B x m (bootstrap samples × grid points)
+      lower <- apply(W, 2, quantile, probs = alpha/2, na.rm = TRUE)
+      upper <- apply(W, 2, quantile, probs = 1 - alpha/2, na.rm = TRUE)
+    }
+    
+    band <- tf::tfd(matrix(c(lower, upper), nrow = 2, byrow = TRUE), arg = grid)
+    
+    return(list(
+      type    = "pointwise",
+      lower   = lower,
+      upper   = upper,
+      band    = band,
+      q_alpha = NULL,
+      alpha   = alpha
+    ))
+  }
+  
+  if (identical(stat, "D")) {
+    # --- Simultaneous bands ---
+    q_alpha   <- as.numeric(stats::quantile(W, probs = 1 - alpha, names = FALSE))
+    halfwidth <- q_alpha / sqrt(n)
+    lower <- diff - halfwidth
+    upper <- diff + halfwidth
+    
+    band <- tf::tfd(matrix(c(lower, upper), nrow = 2, byrow = TRUE), arg = grid)
+    
+    return(list(
+      type    = "simultaneous",
+      lower   = lower,
+      upper   = upper,
+      band    = band,
+      q_alpha = q_alpha,
+      alpha   = alpha
+    ))
+  }
+  
+  stop("Unknown stat type in .tfd_conf_band(): must be 'L2' or 'D'.")
+}
+
+
 #' Build extended htest object
 #' @keywords internal
 #' @noRd
 .tfu_make_htest_ext <- function(stat_name, stat_value, p_value, method, data_name,
-                                estimate = NULL, conf.int = NULL, parameter = NULL,
-                                null.value = 0, alternative = "two.sided") {
+                                estimate = NULL, parameter = NULL,
+                                null.value = 0, alternative = "two.sided",
+                                alpha = NA_real_) {
   out <- list(
-    statistic  = stats::setNames(as.numeric(stat_value), stat_name),
-    parameter  = parameter,
-    p.value    = if (!is.na(p_value)) as.numeric(p_value) else NA_real_,
-    conf.int   = conf.int,
-    estimate   = estimate,
-    null.value = c("difference in mean functions" = null.value),
-    alternative= alternative,
-    method     = method,
-    data.name  = data_name
+    statistic   = stats::setNames(as.numeric(stat_value), stat_name),
+    parameter   = parameter,
+    p.value     = if (!is.na(p_value)) as.numeric(p_value) else NA_real_,
+    estimate    = estimate,
+    null.value  = c("difference in mean functions" = null.value),
+    alternative = alternative,
+    method      = method,
+    data.name   = data_name,
+    alpha       = alpha
   )
   class(out) <- "htest"
   out
@@ -443,17 +498,20 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
 # Exported tests  --------------------------------------------------------------
 # =============================================================================
 
-#' Asymptotic L2 test for MCAR
+#' Asymptotic L2 test for MCAR (optional pointwise bands)
 #'
 #' Tests \eqn{H_0:\ \mu_A=\mu_B} via \eqn{T_{\mu,L2}=n\lVert \hat\mu_A-\hat\mu_B\rVert^2_{L2}}.
 #' p-values are obtained from a KL-mixture; the number of components is chosen by FVE.
+#' Optionally, rough pointwise confidence bands for the mean difference can be computed.
 #'
 #' @inheritParams mcar_common-params
-#' @param fve Fraction of variance explained (0-1) to choose \eqn{q}.
+#' @param fve Fraction of variance explained (0–1) to choose \eqn{q}.
 #' @param B Number of Monte Carlo draws for the KL-mixture.
 #' @param seed RNG seed.
-#' @param alpha Significance level (only for rough CI/visualization).
-#' @return `htest` with extras (parameters q,m; estimates/CI).
+#' @param alpha Significance level (only relevant if \code{compute_bands = TRUE}).
+#' @param compute_bands Logical: if TRUE, compute rough pointwise confidence bands.
+#' @param bands_only Logical: if TRUE, return only band information instead of a full \code{htest}.
+#' @return `htest` (with extras) or a light band list.
 #' @examples
 #' # Brownian toy example (quick)
 #' set.seed(1)
@@ -463,48 +521,80 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
 #' X  <- t(replicate(n, bm(grid)))
 #' # Introduce simple censoring (MNAR): observe only when -1 < X < 2
 #' O  <- 1L * (X > -1 & X < 2); X[O == 0L] <- NA_real_
-#' # No groups supplied -> auto-grouping by observed_ratio
-#' h <- asym_mean_L2_test(X_obs = X, B = 1000, seed = 1)
-#' h$p.value
+#' # Run asymptotic L2 test with bands
+#' res <- asym_mean_L2_test(X_obs = X, B = 1000, seed = 1, compute_bands = TRUE)
+#' res$p.value
 #' @export
 asym_mean_L2_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_ratio = 1,
                               fve = 0.99, B = 5000,
-                              min_frac = 0.10, seed = NULL, alpha = 0.05) {
+                              min_frac = 0.10, seed = NULL, alpha = 0.05,
+                              compute_bands = TRUE, bands_only = FALSE) {
+  # --- Input preparation ---
   prep <- .tfu_prepare_inputs(fd, X_obs, groups, observed_ratio)
   X_obs <- prep$X_obs; O_mat <- prep$O_mat; group_A <- prep$group_A; grid <- prep$grid
   n <- nrow(X_obs)
-
+  
+  # --- Subdomain selection ---
   sub <- .tfu_subdomain_idx_paper(O_mat, group_A, min_frac = min_frac)
   idx <- sub$idx; g <- grid[idx]
   X  <- X_obs[, idx, drop = FALSE]; O <- O_mat[, idx, drop = FALSE]
-
+  
+  # --- Group means ---
   est <- .tfu_available_means(X, O, group_A)
   muA <- est$muA; muB <- est$muB; diff <- muA - muB
-
-  diff_tfd <- tf::tfd(matrix(diff, nrow = 1), arg = g)
-  T_L2     <- n * tf::tf_integrate(diff_tfd^2, arg = g)
-
+  
+  muA_tfd  <- .tfd_mean_function(muA, g)
+  muB_tfd  <- .tfd_mean_function(muB, g)
+  diff_tfd <- .tfd_mean_function(diff, g)
+  
+  # --- Test statistic ---
+  T_L2 <- n * tf::tf_integrate(diff_tfd^2, arg = g)
+  
+  # --- Covariance + KL truncation ---
   K  <- .tfu_corrected_cov(X, O, group_A, muA, muB, est$pA, est$pB)
   KL <- .tfu_kl_from_cov(K, g); lam <- KL$lam
-
+  
   if (!is.null(seed)) set.seed(seed)
   cum <- cumsum(lam) / sum(lam); q <- which(cum >= fve)[1]; q <- max(1L, q)
   lam_q <- lam[seq_len(q)]
-
+  
+  # --- Monte Carlo draws ---
   Z <- matrix(rnorm(q * B), nrow = q)
   W <- colSums((Z^2) * lam_q)
-
+  
+  # --- p-value ---
   p <- (sum(W >= T_L2) + 1) / (length(W) + 1)
-  ci <- c(mean(diff) - sd(W), mean(diff) + sd(W)); attr(ci,"conf.level") <- 1 - alpha
+  
+  # --- Bands ---
+  if (isTRUE(compute_bands)) {
+    bands <- .tfd_conf_band("L2", diff, W, n, alpha, g, method = "asymptotic")
+  } else {
+    bands <- list(lower = NULL, upper = NULL, band = NULL, q_alpha = NA_real_)
+  }
+  
   data_name <- if (!is.null(fd)) "fd" else "X_obs"
-
-  .tfu_make_htest_ext("T_{mu,L2}", T_L2, p,
-                      "L2 test (KL mixture)",
-                      data_name,
-                      estimate = c("mean(A)" = mean(muA), "mean(B)" = mean(muB),
-                                   "diff(A-B)" = mean(diff)),
-                      conf.int = ci,
-                      parameter = c(q = q, m = length(g)))
+  
+  # --- bands_only output ---
+  if (isTRUE(bands_only)) {
+    return(list(
+      grid = g, diff = diff, lower = bands$lower, upper = bands$upper, 
+      q_alpha = bands$q_alpha, alpha = alpha,
+      estimate = list(muA = muA_tfd, muB = muB_tfd, diff = diff_tfd),
+      band_tfd = bands$band
+    ))
+  }
+  
+  # --- Full htest output ---
+  h <- .tfu_make_htest_ext("T_{mu,L2}", T_L2, p,
+                           "L2 test (KL mixture; optional pointwise bands)",
+                           data_name,
+                           estimate = list(muA  = muA_tfd,
+                                           muB  = muB_tfd,
+                                           diff = diff_tfd,
+                                           band = bands$band),
+                           parameter = c(q = q, m = length(g)))
+  h$bands <- bands
+  h
 }
 
 #' Asymptotic supremum test for MCAR (optional simultaneous bands)
@@ -540,70 +630,66 @@ asym_mean_sup_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_
   prep <- .tfu_prepare_inputs(fd, X_obs, groups, observed_ratio)
   X_obs <- prep$X_obs; O_mat <- prep$O_mat; group_A <- prep$group_A; grid <- prep$grid
   n <- nrow(X_obs)
-
+  
   sub <- .tfu_subdomain_idx_paper(O_mat, group_A, min_frac = min_frac)
   idx <- sub$idx; g <- grid[idx]
   X  <- X_obs[, idx, drop = FALSE]; O <- O_mat[, idx, drop = FALSE]
-
+  
   est <- .tfu_available_means(X, O, group_A)
   muA <- est$muA; muB <- est$muB; diff <- muA - muB
+  
+  muA_tfd <- .tfd_mean_function(muA, g)
+  muB_tfd <- .tfd_mean_function(muB, g)
+  diff_tfd <- .tfd_mean_function(diff, g)
+  
   T_D <- sqrt(n) * max(abs(diff))
-
+  
   K  <- .tfu_corrected_cov(X, O, group_A, muA, muB, est$pA, est$pB)
   KL <- .tfu_kl_from_cov(K, g); lam <- KL$lam; phi <- KL$phi
-
+  
   if (!is.null(seed)) set.seed(seed)
   cum <- cumsum(lam) / sum(lam); q <- which(cum >= fve)[1]; q <- max(1L, q)
   lam_q <- lam[seq_len(q)]; phi_q <- phi[, seq_len(q), drop = FALSE]
   A <- sweep(phi_q, 2, sqrt(lam_q), "*")  # m x q
-
+  
   Z <- matrix(rnorm(q * B), nrow = q)     # q x B
   gp_vals <- A %*% Z                      # m x B
   W <- apply(abs(gp_vals), 2, max)
-
+  
   p <- (sum(W >= T_D) + 1) / (length(W) + 1)
-
+  
   if (isTRUE(compute_bands)) {
-    q_alpha <- as.numeric(stats::quantile(W, probs = 1 - alpha, names = FALSE))
-    halfwidth <- q_alpha / sqrt(n)
-    lower <- diff - halfwidth
-    upper <- diff + halfwidth
-    ci <- c(mean(diff) - halfwidth, mean(diff) + halfwidth); attr(ci,"conf.level") <- 1 - alpha
+    bands <- .tfd_conf_band("D", diff, W, n, alpha, g)
   } else {
-    q_alpha <- NA_real_; lower <- upper <- NULL; ci <- NULL
+    bands <- list(lower = NULL, upper = NULL, band = NULL, q_alpha = NA_real_)
   }
-
+  
   data_name <- if (!is.null(fd)) "fd" else "X_obs"
-  est_vec <- c("mean(A)" = mean(muA), "mean(B)" = mean(muB), "diff(A-B)" = mean(diff))
-
+  
   if (isTRUE(bands_only)) {
     return(list(
-      grid=g, diff=diff, lower=lower, upper=upper, q_alpha=q_alpha,
+      grid=g, diff=diff, lower=bands$lower, upper=bands$upper, q_alpha=bands$q_alpha,
       idx=idx, min_frac_used=sub$min_frac_used, fallback=sub$fallback,
-      alpha=alpha, estimate=est_vec, conf.int=ci
+      alpha=alpha, estimate=list(muA=muA_tfd, muB=muB_tfd, diff=diff_tfd)
     ))
   }
-
+  
   h <- .tfu_make_htest_ext("T_{mu,D}", T_D, p,
                            "Supremum test (GP approx; optional bands)",
                            data_name,
-                           estimate = est_vec, conf.int = ci, parameter = c(q = q, m = length(g)))
-  h$idx   <- idx
-  h$grid  <- g
-  h$diff  <- diff
-  h$lower <- lower
-  h$upper <- upper
-  h$q_alpha <- q_alpha
-  h$alpha <- alpha
-  h$min_frac_used <- sub$min_frac_used
-  h$fallback <- sub$fallback
+                           estimate = list(muA  = muA_tfd,
+                                           muB  = muB_tfd,
+                                           diff = diff_tfd,
+                                           band = bands$band),
+                           parameter = c(q = q, m = length(g)))
+  h$bands <- bands
   h
 }
 
 #' Bootstrap mean test (L2/Supremum) with optional bands
 #'
-#' Returns bootstrap p-values for L2 or Supremum and, optionally, simultaneous
-#' confidence bands for the difference curve. Parallelization via foreach/doParallel
+#' Returns bootstrap p-values for L2 or Supremum and, optionally, confidence
+#' bands for the difference curve. Parallelization via foreach/doParallel
 #' with reproducible seeding via doRNG.
 #'
 #' @inheritParams mcar_common-params
@@ -612,24 +698,15 @@ asym_mean_sup_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_
 #' @param parallel Logical: run in parallel?
 #' @param ncpus Number of workers for an internal cluster (if created).
 #' @param seed RNG seed (passed to doRNG).
-#' @param stat `"L2"` or `"D"` (supremum).
-#' @param compute_bands Compute simultaneous bands?
+#' @param stat `"L2"`, `"D"` oder `c("L2","D")`.
+#' @param compute_bands Compute confidence bands?
 #' @param return_boot Attach bootstrap statistics?
 #' @param chunk_size Number of bootstrap replicates per foreach task.
 #' @param manage_backend Backend control (`"auto"`, `"force_pool"`, `"sequential"`).
 #' @param worker_blas_threads BLAS/OpenMP threads per worker (internal pool only).
 #' @param cleanup Logical: if TRUE, detach foreach/doRNG and stop the internal pool on exit.
 #' @param bands_only Return only the band payload?
-#' @return `htest` (with extras) or a light band list.
-#' @examples
-#' set.seed(1)
-#' m <- 20; n <- 20
-#' grid <- seq(0, 1, length.out = m)
-#' bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(m-1, sd = sqrt(d)))) }
-#' X  <- t(replicate(n, bm(grid)))
-#' O  <- 1L * (X > -1 & X < 2); X[O == 0L] <- NA_real_
-#' h <- boot_mean_test(X_obs = X, stat = "D", B = 100, parallel = FALSE, seed = 1)
-#' h$p.value
+#' @return `htest` (with extras) or a list of both tests.
 #' @export
 boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_ratio = 1,
                            B = 5000,
@@ -643,7 +720,7 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
                            chunk_size = NULL,
                            manage_backend = c("auto","force_pool","sequential"),
                            worker_blas_threads = 1L,
-                           bands_only = FALSE, 
+                           bands_only = FALSE,
                            cleanup = FALSE) {
   
   if (isTRUE(cleanup)) {
@@ -654,35 +731,45 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
     }, add = TRUE)
   }
   
-  stat <- match.arg(stat)
+  # --- Stat argument prüfen ---
+  stat <- unique(stat)
+  if (!all(stat %in% c("L2","D"))) {
+    stop("Invalid 'stat' argument: must be 'L2', 'D' or c('L2','D').", call. = FALSE)
+  }
+  
   manage_backend <- match.arg(manage_backend)
-
+  
   prep <- .tfu_prepare_inputs(fd = fd, X_obs = X_obs, groups = groups, observed_ratio = observed_ratio)
   X_obs <- prep$X_obs; O_mat <- prep$O_mat; group_A <- prep$group_A; grid <- prep$grid
   n <- nrow(X_obs)
-
+  
   sub <- .tfu_subdomain_idx_paper(O_mat, group_A, min_frac = min_frac)
   idx <- sub$idx
   X   <- X_obs[, idx, drop = FALSE]
   O   <- O_mat[, idx, drop = FALSE]
   g   <- grid[idx]
-
+  
   est  <- .tfu_available_means(X, O, group_A)
   muA  <- est$muA; muB <- est$muB
   diff <- muA - muB
-
+  
+  muA_tfd  <- .tfd_mean_function(muA, g)
+  muB_tfd  <- .tfd_mean_function(muB, g)
+  diff_tfd <- .tfd_mean_function(diff, g)
+  
   w <- .tfu_trap_weights(g)
   T_L2 <- n * sum((diff^2) * w)
   T_D  <- sqrt(n) * max(abs(diff))
-
+  
   IA <- as.numeric(as.logical(group_A)); IB <- 1 - IA
   A_idx <- which(IA == 1); B_idx <- which(IB == 1)
   X_cent <- X
   if (length(A_idx)) X_cent[A_idx, ] <- sweep(X[A_idx, , drop = FALSE], 2, muA, `-`)
   if (length(B_idx)) X_cent[B_idx, ] <- sweep(X[B_idx, , drop = FALSE], 2, muB, `-`)
-
+  
   if (!is.null(seed)) set.seed(seed)
   
+  # --- inner bootstrap runner ---
   .run_boot <- function(manage_backend_mode = manage_backend, ncpus_eff = ncpus) {
     be <- .tfu_ensure_backend(
       manage_backend      = manage_backend_mode,
@@ -702,18 +789,20 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
     }
     idx_chunks <- split(seq_len(B), ceiling(seq_len(B) / cs))
     
-    # --- capture for worker export ---
+    # capture for worker export
     n_       <- n
     X_cent_  <- X_cent
     O_       <- O
     group_A_ <- group_A
     w_       <- w
     
-    boot_mat <- foreach::foreach(
-      ch = idx_chunks, .combine = rbind, .init = NULL, .inorder = FALSE
+    boot_list <- foreach::foreach(
+      ch = idx_chunks, .inorder = FALSE
     ) %dorng% {
-      out <- matrix(NA_real_, nrow = length(ch), ncol = 3L,
-                    dimnames = list(NULL, c("L2","D","redraws")))
+      out   <- matrix(NA_real_, nrow = length(ch), ncol = 3L,
+                      dimnames = list(NULL, c("L2","D","redraws")))
+      diffs <- matrix(NA_real_, nrow = length(ch), ncol = ncol(X_cent_))
+      
       for (ii in seq_along(ch)) {
         redraws <- 0L
         repeat {
@@ -735,19 +824,24 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
         numB <- colSums(replace(XB, is.na(XB), 0))
         muB_b <- numB / (n_ * pB)
         d_b <- muA_b - muB_b
+        
         out[ii, ] <- c(
           L2 = n_ * sum((d_b^2) * w_),
           D  = sqrt(n_) * max(abs(d_b)),
           redraws = redraws
         )
+        diffs[ii, ] <- d_b
       }
-      out
+      list(stats = out, diffs = diffs)
     }
-    boot_mat  
-  }           
+    
+    boot_mat   <- do.call(rbind, lapply(boot_list, `[[`, "stats"))
+    boot_diffs <- do.call(rbind, lapply(boot_list, `[[`, "diffs"))
+    list(boot_mat = boot_mat, boot_diffs = boot_diffs)
+  }
   
-  # --- robust run with single automatic retry on stale backend ---
-  boot_mat <- tryCatch(
+  # --- robust run with retry ---
+  boot_res <- tryCatch(
     .run_boot(manage_backend_mode = manage_backend, ncpus_eff = ncpus),
     interrupt = function(e) {
       .tfu_reset_backend()
@@ -755,9 +849,9 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
     },
     error = function(e) e
   )
-  if (inherits(boot_mat, "error") && .tfu_is_worker_init_error(boot_mat)) {
+  if (inherits(boot_res, "error") && .tfu_is_worker_init_error(boot_res)) {
     .tfu_reset_backend()
-    boot_mat <- tryCatch(
+    boot_res <- tryCatch(
       .run_boot(manage_backend_mode = "force_pool",
                 ncpus_eff = max(1L, parallel::detectCores(logical = TRUE) - 1L)),
       interrupt = function(e) {
@@ -767,9 +861,12 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
       error = function(e) e
     )
   }
-  if (inherits(boot_mat, "error")) stop(boot_mat)
+  if (inherits(boot_res, "error")) stop(boot_res)
   
-
+  boot_mat   <- boot_res$boot_mat
+  boot_diffs <- boot_res$boot_diffs
+  
+  # clean bootstrap stats
   boot_L2 <- boot_mat[, "L2"]; boot_D <- boot_mat[, "D"]
   total_redraws <- sum(boot_mat[, "redraws"])
   n_bad <- sum(is.na(boot_L2) | is.na(boot_D))
@@ -778,49 +875,52 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
   }
   boot_L2 <- boot_L2[!is.na(boot_L2)]
   boot_D  <- boot_D[!is.na(boot_D)]
-
+  
   p_L2 <- (sum(boot_L2 >= T_L2) + 1) / (length(boot_L2) + 1)
   p_D  <- (sum(boot_D  >= T_D ) + 1) / (length(boot_D)  + 1)
-
-  if (isTRUE(compute_bands)) {
-    q_alpha   <- as.numeric(stats::quantile(boot_D, probs = 1 - alpha, names = FALSE))
-    halfwidth <- q_alpha / sqrt(n)
-    ci <- c(mean(diff) - halfwidth, mean(diff) + halfwidth); attr(ci,"conf.level") <- 1 - alpha
-    lower <- diff - halfwidth
-    upper <- diff + halfwidth
-  } else {
-    ci <- NULL; q_alpha <- NA_real_; lower <- upper <- NULL
+  
+  results <- list()
+  
+  if ("L2" %in% stat) {
+    bands <- if (isTRUE(compute_bands)) 
+      .tfd_conf_band("L2", diff, boot_diffs, n, alpha, g, method="bootstrap") 
+    else list(lower=NULL,upper=NULL,band=NULL,q_alpha=NA_real_)
+    
+    results$L2 <- .tfu_make_htest_ext("T_{mu,L2}", T_L2, p_L2,
+                                      "Bootstrap mean test (L2)", 
+                                      if (!is.null(fd)) "fd (tfd/tfd_irreg via tf_gather)" else "X_obs",
+                                      estimate = list(muA=muA_tfd, muB=muB_tfd, diff=diff_tfd, band=bands$band),
+                                      parameter = c(m=length(g), B=B-n_bad),
+                                      null.value = 0, alternative="two.sided")
+    results$L2$q_alpha <- bands$q_alpha; results$L2$lower <- bands$lower; results$L2$upper <- bands$upper
   }
-
-  est_vec <- c("mean(A)" = mean(muA), "mean(B)" = mean(muB), "diff(A-B)" = mean(diff))
-  data_name <- if (!is.null(fd)) "fd (tfd/tfd_irreg via tf_gather)" else "X_obs"
-
-  if (isTRUE(bands_only)) {
-    return(list(
-      grid=g, diff=diff, lower=lower, upper=upper, q_alpha=q_alpha,
-      idx=idx, min_frac_used=sub$min_frac_used, fallback=sub$fallback,
-      alpha=alpha, estimate=est_vec, conf.int=ci
-    ))
+  
+  if ("D" %in% stat) {
+    bands <- if (isTRUE(compute_bands)) 
+      .tfd_conf_band("D", diff, boot_D, n, alpha, g, method="bootstrap") 
+    else list(lower=NULL,upper=NULL,band=NULL,q_alpha=NA_real_)
+    
+    results$D <- .tfu_make_htest_ext("T_{mu,D}", T_D, p_D,
+                                     "Bootstrap mean test (supremum)", 
+                                     if (!is.null(fd)) "fd (tfd/tfd_irreg via tf_gather)" else "X_obs",
+                                     estimate = list(muA=muA_tfd, muB=muB_tfd, diff=diff_tfd, band=bands$band),
+                                     parameter = c(m=length(g), B=B-n_bad),
+                                     null.value = 0, alternative="two.sided")
+    results$D$q_alpha <- bands$q_alpha; results$D$lower <- bands$lower; results$D$upper <- bands$upper
   }
-
-  if (identical(stat, "L2")) {
-    hobj <- .tfu_make_htest_ext("T_{mu,L2}", T_L2, p_L2,
-                                "Bootstrap mean test (L2; foreach+doRNG)", data_name,
-                                estimate = est_vec, conf.int = ci, parameter = c(m = length(g), B = B - n_bad),
-                                null.value = 0, alternative = "two.sided")
-  } else {
-    hobj <- .tfu_make_htest_ext("T_{mu,D}", T_D, p_D,
-                                "Bootstrap mean test (supremum; foreach+doRNG)", data_name,
-                                estimate = est_vec, conf.int = ci, parameter = c(m = length(g), B = B - n_bad),
-                                null.value = 0, alternative = "two.sided")
+  
+  # Meta-Infos
+  for (nm in names(results)) {
+    results[[nm]]$grid <- g; results[[nm]]$muA <- muA; results[[nm]]$muB <- muB; results[[nm]]$diff <- diff
+    results[[nm]]$idx  <- idx; results[[nm]]$min_frac_used <- sub$min_frac_used; results[[nm]]$fallback <- sub$fallback
+    results[[nm]]$alpha <- alpha
+    results[[nm]]$band_tfd <- results[[nm]]$estimate$band
+    results[[nm]]$total_redraws <- total_redraws
+    results[[nm]]$skip_rate <- total_redraws / (B + total_redraws)
+    if (isTRUE(return_boot)) { results[[nm]]$boot_L2 <- boot_L2; results[[nm]]$boot_D <- boot_D }
   }
-
-  hobj$grid <- g; hobj$muA <- muA; hobj$muB <- muB; hobj$diff <- diff
-  hobj$idx  <- idx; hobj$min_frac_used <- sub$min_frac_used; hobj$fallback <- sub$fallback
-  hobj$alpha <- alpha; hobj$q_alpha <- q_alpha
-  hobj$lower <- lower; hobj$upper <- upper
-  hobj$total_redraws <- total_redraws
-  hobj$skip_rate <- total_redraws / (B + total_redraws)
-  if (isTRUE(return_boot)) { hobj$boot_L2 <- boot_L2; hobj$boot_D <- boot_D }
-  return(hobj)
+  
+  if (length(results) == 1) return(results[[1]])
+  return(results)
 }
+
