@@ -1,5 +1,5 @@
 # =============================================================================
-# mcar.test - Mean-based MCAR tests & bands (auto inputs; fd-or-matrix)
+# mcar.test - Mean-based MCAR tests & bands
 # =============================================================================
 
 #' Internal utilities for mcar.test
@@ -39,131 +39,92 @@ NULL
 # Utilities (internal)  --------------------------------------------------------
 # =============================================================================
 
-#' Internal environment for parallel resources
-#' @keywords internal
-#' @noRd
-.tfu_par_env <- new.env(parent = emptyenv())
-.tfu_par_env$cl <- NULL
-.tfu_par_env$old_threads <- NULL
-.tfu_par_env$finalizer_set <- FALSE
-
-#' Stop internal parallel backend and restore thread settings
-#' @keywords internal
-#' @noRd
-.shutdown_parallel_tfu <- function() {
-  # first detach backend (prevents "stale sockets")
-  try(foreach::registerDoSEQ(), silent = TRUE)
-  try(doRNG::registerDoRNG(NULL), silent = TRUE)
-  # stop implicit cluster (if created elsewhere)
-  suppressWarnings(try(doParallel::stopImplicitCluster(), silent = TRUE))
-  # stop own pool
-  if (!is.null(.tfu_par_env$cl)) {
-    try(parallel::stopCluster(.tfu_par_env$cl), silent = TRUE)
-    .tfu_par_env$cl <- NULL
-  }
-  # Reset BLAS/OpenMP threads
-  olds <- .tfu_par_env$old_threads
-  if (!is.null(olds)) {
-    if (!is.na(olds[1])) Sys.setenv(OPENBLAS_NUM_THREADS = olds[1])
-    if (!is.na(olds[2])) Sys.setenv(MKL_NUM_THREADS     = olds[2])
-    if (!is.na(olds[3])) Sys.setenv(OMP_NUM_THREADS     = olds[3])
-    .tfu_par_env$old_threads <- NULL
-  }
-  invisible(TRUE)
-}
-
 #' Fully reset foreach backend and RNG (use after user interrupt)
 #' @keywords internal
 #' @noRd
-.tfu_reset_backend <- function() {
+.reset_backend <- function() {
+  # Reset foreach/doRNG
   try(foreach::registerDoSEQ(), silent = TRUE)
   try(doRNG::registerDoRNG(NULL), silent = TRUE)
+  
+  # Stop implicit cluster
   suppressWarnings(try(doParallel::stopImplicitCluster(), silent = TRUE))
-  try(.shutdown_parallel_tfu(), silent = TRUE)
+  
+  # Stop own pool
+  if (exists("cl", envir = .tfu_par_env, inherits = FALSE)) {
+    cl <- .tfu_par_env$cl
+    if (!is.null(cl)) {
+      try(parallel::stopCluster(cl), silent = TRUE)
+    }
+    rm("cl", envir = .tfu_par_env)
+  }
+  
+  # Reset BLAS/OpenMP threads
+  if (exists("old_threads", envir = .tfu_par_env, inherits = FALSE)) {
+    olds <- .tfu_par_env$old_threads
+    if (!is.null(olds)) {
+      if (!is.na(olds[1])) Sys.setenv(OPENBLAS_NUM_THREADS = olds[1])
+      if (!is.na(olds[2])) Sys.setenv(MKL_NUM_THREADS     = olds[2])
+      if (!is.na(olds[3])) Sys.setenv(OMP_NUM_THREADS     = olds[3])
+    }
+    rm("old_threads", envir = .tfu_par_env)
+  }
+  
+  # Reset RNG to safe reproducible state
   suppressWarnings(RNGkind("L'Ecuyer-CMRG"))
+  
   invisible(TRUE)
-}
-
-#' Detect the notorious "worker initialization failed" error
-#' @keywords internal
-#' @noRd
-.tfu_is_worker_init_error <- function(e) {
-  inherits(e, "error") && grepl("worker initialization failed", conditionMessage(e), fixed = TRUE)
 }
 
 #' Package load hook: initialize parallel environment
 #'
 #' Ensures that `.tfu_par_env` exists and is ready when the package
 #' is loaded. The actual cluster is only created lazily on demand
-#' by `.tfu_ensure_backend()`.
+#' by `.init_parallel()`.
 #'
 #' @keywords internal
 #' @noRd
 .onLoad <- function(libname, pkgname) {
-  if (!exists(".tfu_par_env", envir = parent.env(environment()))) {
-    assign(".tfu_par_env", new.env(parent = emptyenv()),
-           envir = parent.env(environment()))
-    .tfu_par_env$cl <- NULL
-    .tfu_par_env$old_threads <- NULL
-    .tfu_par_env$finalizer_set <- FALSE
-  }
+  assign(".tfu_par_env", new.env(parent = emptyenv()),
+         envir = parent.env(environment()))
+  .tfu_par_env$finalizer_set <- FALSE
 }
+
+# # --- Manuell ausführen wenn noch kein package ---
+# if (!exists(".tfu_par_env", envir = globalenv())) {
+#   .tfu_par_env <- new.env(parent = emptyenv())
+#   .tfu_par_env$finalizer_set <- FALSE
+# }
+
 
 #' Package unload hook: ensure cluster + RNG cleanup
 #' @keywords internal
 #' @noRd
 .onUnload <- function(libpath) {
-  try(foreach::registerDoSEQ(), silent = TRUE)
-  try(doRNG::registerDoRNG(NULL), silent = TRUE)
-  try(.shutdown_parallel_tfu(), silent = TRUE)
+  try(.reset_backend(), silent = TRUE)
 }
-
-# -- Bootstrap helper up-front ----------------
-#' (Internal) grouped bootstrap means
-#'
-#' Helper for bootstrap resamples (group-wise available means).
-#'
-#' @param X_grp Submatrix for one group.
-#' @param O_grp Observation (0/1) matrix of the same size.
-#' @param n_total Total sample size \eqn{n}.
-#' @param eps Numerical lower bound for p-hats.
-#' @return Vector of group means.
-#' @keywords internal
-#' @noRd
-if (!exists(".tfu_boot_group_mean", mode = "function")) {
-  .tfu_boot_group_mean <- function(X_grp, O_grp, n_total, eps = 1e-8) {
-    p_hat <- colSums(O_grp) / n_total
-    p_hat <- pmax(p_hat, eps)
-    numer <- colSums(replace(X_grp, is.na(X_grp), 0))
-    numer / (n_total * p_hat)
-  }
-}
-
-# -- Grouping, coercion, subdomain, weights, estimators, covariance ------------
 
 #' Convert group labels to logical
 #' @keywords internal
 #' @noRd
-.tfu_groups_to_logical <- function(groups) {
-  if (is.factor(groups)) groups <- droplevels(groups)
+.groups_to_logical <- function(groups) {
+  if (is.factor(groups)) groups <- as.character(droplevels(groups))
+  
   if (is.logical(groups)) return(groups)
+  
   if (is.character(groups) || is.numeric(groups) || is.integer(groups)) {
     u <- unique(groups)
     if (length(u) != 2L) stop("`groups` must have exactly 2 distinct values.")
     return(groups == u[1])
   }
+  
   stop("`groups` must be logical/character/factor/numeric.")
 }
-
-#' Auto-group from observation ratio
-#' @keywords internal
-#' @noRd
-.tfu_group_from_delta <- function(O_mat, delta) rowMeans(O_mat != 0) >= delta
 
 #' Coerce `tfd` to dense matrix + grid
 #' @keywords internal
 #' @noRd
-.tfu_from_fd <- function(fd) {
+.fd_to_matrix <- function(fd) {
   X_try <- tryCatch(
     { suppressWarnings(as.matrix(fd)) },
     error = function(e) {
@@ -171,7 +132,6 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
            conditionMessage(e), call. = FALSE)
     }
   )
-  if (!is.matrix(X_try)) stop("`as.matrix(fd)` did not return a matrix.", call. = FALSE)
   if (ncol(X_try) < 2L) stop("`fd` has fewer than 2 support points (ncol < 2).", call. = FALSE)
   
   g <- tf::tf_arg(fd)   
@@ -183,11 +143,13 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
 #' Subdomain selector (strict + overlap fallback)
 #' @keywords internal
 #' @noRd
-.tfu_subdomain_idx_paper <- function(O_mat, group_A, min_frac = 0.10) {
+.limit_subdomain <- function(O_mat, group_A, min_frac = 0.10) {
   stopifnot(is.matrix(O_mat), length(group_A) == nrow(O_mat))
   n  <- nrow(O_mat)
-  IA <- as.numeric(as.logical(group_A)); IB <- 1 - IA
-  cA <- colSums(O_mat * IA); cB <- colSums(O_mat * IB)
+  IA <- as.numeric(as.logical(group_A))
+  IB <- 1 - IA
+  cA <- colSums(O_mat * IA)
+  cB <- colSums(O_mat * IB)
 
   idx_strict <- which(pmin(cA, cB) > n * min_frac)
   if (length(idx_strict) >= 2L) {
@@ -195,8 +157,8 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
   }
   stop(
     paste0(
-      "No suitable subdomain found: neither strict criterion (min_frac = ", format(min_frac), ") ",
-      "nor overlap (both groups > 0) holds at \u2265 2 time points. Adjust grouping or 'min_frac'."
+      "No suitable subdomain found: strict criterion (min_frac = ", format(min_frac), 
+      ") not satisfied at \u2265 2 time points. Adjust grouping or 'min_frac'."
     ),
     call. = FALSE
   )
@@ -205,9 +167,9 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
 #' Prepare inputs from `tfd` or matrix
 #' @keywords internal
 #' @noRd
-.tfu_prepare_inputs <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_ratio = 1) {
+.prepare_inputs <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_ratio = 1) {
   if (!is.null(fd)) {
-    conv  <- .tfu_from_fd(fd)
+    conv  <- .fd_to_matrix(fd)
     X_obs <- conv$X_obs
     grid_vec <- conv$grid
   } else {
@@ -221,12 +183,12 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
   if (!is.null(groups)) {
     if (length(groups) != n) stop("`groups` must have length nrow(X_obs).")
     if (any(is.na(groups))) stop("`groups` must not contain NAs.")
-    group_A <- .tfu_groups_to_logical(groups)
+    group_A <- .groups_to_logical(groups)
 
     obs_frac <- rowMeans(O_mat != 0)
     meanA <- mean(obs_frac[group_A], na.rm = TRUE)
     meanB <- mean(obs_frac[!group_A], na.rm = TRUE)
-    if (is.finite(meanA) && is.finite(meanB) && meanA < meanB) {
+    if (meanA < meanB) {
       group_A <- !group_A
       message(sprintf(
         "Note: swapped labels so Group A is the more complete group (mean A=%.3f, B=%.3f).",
@@ -234,7 +196,7 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
       ))
     }
   } else {
-    group_A <- .tfu_group_from_delta(O_mat, observed_ratio)
+    group_A <- rowMeans(O_mat != 0) >= observed_ratio
     if (sum(group_A) == 0L || sum(!group_A) == 0L) {
       stop("Auto-grouping failed: one group empty. Discard this run or adjust observed_ratio.")
     }
@@ -251,9 +213,12 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
 #' Trapezoidal integration weights
 #' @keywords internal
 #' @noRd
-.tfu_trap_weights <- function(x) {
-  m <- length(x); if (m == 1L) return(1)
-  w <- numeric(m); w[1] <- (x[2]-x[1])/2; w[m] <- (x[m]-x[m-1])/2
+.trapezoid_weights <- function(x) {
+  m <- length(x)
+  if (m == 1L) return(1)
+  w <- numeric(m)
+  w[1] <- (x[2]-x[1])/2
+  w[m] <- (x[m]-x[m-1])/2
   if (m > 2L) w[2:(m-1)] <- (x[3:m] - x[1:(m-2)])/2
   w
 }
@@ -261,7 +226,7 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
 #' Available-mean estimators by group
 #' @keywords internal
 #' @noRd
-.tfu_available_means <- function(X_obs, O_mat, group_A) {
+.group_mean_estimators <- function(X_obs, O_mat, group_A) {
   n  <- nrow(X_obs)
   IA <- as.numeric(group_A); IB <- 1 - IA
   pA_hat <- colSums(O_mat * IA) / n
@@ -274,9 +239,10 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
 #' Corrected covariance under partial observation
 #' @keywords internal
 #' @noRd
-.tfu_corrected_cov <- function(X_obs, O_mat, group_A, muA_hat, muB_hat, pA_hat, pB_hat) {
+.covariance_estimator <- function(X_obs, O_mat, group_A, muA_hat, muB_hat, pA_hat, pB_hat) {
   n  <- nrow(X_obs)
-  IA <- as.numeric(group_A); IB <- 1 - IA
+  IA <- as.numeric(group_A)
+  IB <- 1 - IA
   Xtilde <- X_obs
   Xtilde[ group_A, ] <- sweep(X_obs[ group_A, , drop = FALSE], 2, muA_hat, `-`)
   Xtilde[!group_A, ] <- sweep(X_obs[!group_A, , drop = FALSE], 2, muB_hat, `-`)
@@ -287,11 +253,11 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
   (K_hat + t(K_hat)) / 2
 }
 
-#' KL basis from covariance (strict PSD check)
+#' KL basis from covariance 
 #' @keywords internal
 #' @noRd
-.tfu_kl_from_cov <- function(K, grid, tol = sqrt(.Machine$double.eps)) {
-  w  <- .tfu_trap_weights(grid)
+.kl_decomposition <- function(K, grid, tol = sqrt(.Machine$double.eps)) {
+  w  <- .trapezoid_weights(grid)
   sw <- sqrt(w)
   S <- (sw %o% sw) * K
   S <- (S + t(S)) / 2
@@ -308,20 +274,13 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
   list(lam = lam, phi = phi, w = w)
 }
 
-#' Functional mean estimate
-#' @keywords internal
-#' @noRd
-.tfd_mean_function <- function(values, grid) {
-  tf::tfd(matrix(values, nrow = 1), arg = grid)
-}
-
 #' Functional confidence bands
 #'
 #' Pointwise bands for L2, simultaneous bands for Sup.
 #'
 #' @keywords internal
 #' @noRd
-.tfd_conf_band <- function(stat, diff, W, n, alpha, grid, method = c("asymptotic","bootstrap")) {
+.confidence_bands <- function(stat, diff, W, n, alpha, grid, method = c("asymptotic","bootstrap")) {
   method <- match.arg(method)
   
   if (identical(stat, "L2")) {
@@ -369,14 +328,14 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
     ))
   }
   
-  stop("Unknown stat type in .tfd_conf_band(): must be 'L2' or 'D'.")
+  stop("Unknown stat type in .confidence_bands(): must be 'L2' or 'D'.")
 }
 
 
 #' Build extended htest object
 #' @keywords internal
 #' @noRd
-.tfu_make_htest_ext <- function(stat_name, stat_value, p_value, method, data_name,
+.create_output <- function(stat_name, stat_value, p_value, method, data_name,
                                 estimate = NULL, parameter = NULL,
                                 null.value = 0, alternative = "two.sided",
                                 alpha = NA_real_) {
@@ -396,21 +355,29 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
 }
 
 
-#' Ensure/reuse parallel backend for foreach (robust to interrupts)
-#' - Reuses external backends when present
-#' - Reuses internal pool if alive; otherwise hard-resets and rebuilds it
-#' - Sets robust RNG (L'Ecuyer-CMRG) and per-worker streams
-#' - Pins BLAS/OpenMP threads per worker to avoid oversubscription
+#' Initialize or reuse parallel backend for foreach (robust to interrupts)
+#'
+#' - Reuse external backends when present
+#' - Reuse internal pool if alive; otherwise hard-reset and rebuild it
+#' - Set robust RNG (L'Ecuyer-CMRG) and per-worker streams
+#' - Pin BLAS/OpenMP threads per worker to avoid oversubscription
 #' @keywords internal
 #' @noRd
-.tfu_ensure_backend <- function(manage_backend = c("auto","force_pool","sequential"),
-                                ncpus = parallel::detectCores(logical = TRUE),
-                                worker_blas_threads = 1L,
-                                seed = 42,
-                                parallel_flag = TRUE) {
+.init_parallel <- function(manage_backend = c("auto","force_pool","sequential"),
+                           ncpus = parallel::detectCores(logical = TRUE),
+                           worker_blas_threads = 1L,
+                           seed = 42,
+                           parallel_flag = TRUE) {
   manage_backend <- match.arg(manage_backend)
+  ncpus <- max(1L, min(as.integer(ncpus), parallel::detectCores(logical = TRUE)))
   
-  # Liveness probe for an existing cluster
+  # --- RNG setup (session level, once) ---
+  if (!is.null(seed)) {
+    suppressWarnings(RNGkind("L'Ecuyer-CMRG"))
+    doRNG::registerDoRNG(seed)
+  }
+  
+  # --- Helper: check if cluster alive ---
   .is_alive <- function(cl) {
     if (is.null(cl)) return(FALSE)
     ok <- tryCatch({ parallel::clusterCall(cl, function() TRUE); TRUE },
@@ -418,65 +385,53 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
     isTRUE(ok)
   }
   
-  # Sequential path (no cluster)
+  # --- Sequential path (no cluster) ---
   if (!isTRUE(parallel_flag) || identical(manage_backend, "sequential")) {
     foreach::registerDoSEQ()
-    if (!is.null(seed)) { suppressWarnings(RNGkind("L'Ecuyer-CMRG")); set.seed(seed) }
-    doRNG::registerDoRNG(seed)
     return(list(nworkers = 1L, used = "sequential"))
   }
   
-  # External backend present? -> reuse (but set deterministic RNG)
+  # --- External backend present? -> reuse ---
   existing_workers <- tryCatch(foreach::getDoParWorkers(), error = function(e) 1L)
   existing_backend <- tryCatch(foreach::getDoParName(),    error = function(e) "doSEQ")
-  has_external_backend <- isTRUE(existing_workers > 1L && existing_backend != "doSEQ")
-  
-  if (identical(manage_backend, "auto") && has_external_backend) {
-    if (!is.null(seed)) { suppressWarnings(RNGkind("L'Ecuyer-CMRG")); set.seed(seed) }
-    doRNG::registerDoRNG(seed)
+  if (manage_backend == "auto" && existing_workers > 1L && existing_backend != "doSEQ") {
     return(list(nworkers = existing_workers, used = paste0("external:", existing_backend)))
   }
   
-  # Internal backend: reuse if alive (unless force_pool)
-  if (.is_alive(.tfu_par_env$cl) && !identical(manage_backend, "force_pool")) {
+  # --- Internal backend: reuse if alive (unless force_pool) ---
+  if (.is_alive(.tfu_par_env$cl) && manage_backend != "force_pool") {
     doParallel::registerDoParallel(.tfu_par_env$cl)
-    if (!is.null(seed)) { suppressWarnings(RNGkind("L'Ecuyer-CMRG")); set.seed(seed) }
-    doRNG::registerDoRNG(seed)
-    nworkers <- tryCatch(foreach::getDoParWorkers(), error = function(e) 1L)
+    nworkers <- foreach::getDoParWorkers()
     return(list(nworkers = nworkers, used = "internal-reused"))
   }
   
-  # Hard reset (crucial after interrupts)
-  .tfu_reset_backend()
+  # --- Hard reset (after interrupts etc.) ---
+  .reset_backend()
   
-  # Create fresh internal cluster
-  ncpus <- max(1L, min(as.integer(ncpus), parallel::detectCores(logical = TRUE)))
+  # --- Create fresh internal cluster ---
   cl <- parallel::makeCluster(ncpus, outfile = "")
   
-  # Pin BLAS/OpenMP threads per worker (avoid oversubscription)
+  # Pin BLAS/OpenMP threads per worker
   .tfu_par_env$old_threads <- Sys.getenv(
     c("OPENBLAS_NUM_THREADS","MKL_NUM_THREADS","OMP_NUM_THREADS"), unset = NA
   )
   parallel::clusterCall(cl, function(k) {
-    Sys.setenv(OPENBLAS_NUM_THREADS = as.character(k),
-               MKL_NUM_THREADS      = as.character(k),
-               OMP_NUM_THREADS      = as.character(k))
+    Sys.setenv(OPENBLAS_NUM_THREADS = k,
+               MKL_NUM_THREADS      = k,
+               OMP_NUM_THREADS      = k)
     NULL
   }, worker_blas_threads)
   
-  # Robust RNG on master + per worker streams
+  # Worker RNG streams (only if seed provided)
   if (!is.null(seed)) {
-    suppressWarnings(RNGkind("L'Ecuyer-CMRG"))
-    set.seed(seed)
     parallel::clusterSetRNGStream(cl, iseed = seed)
   }
   
-  # Register backend and doRNG
+  # Register backend
   doParallel::registerDoParallel(cl)
-  doRNG::registerDoRNG(seed)
-  
-  # Keep handle & one-time finalizer to guarantee cleanup
   .tfu_par_env$cl <- cl
+  
+  # One-time finalizer for cleanup
   if (!isTRUE(.tfu_par_env$finalizer_set)) {
     reg.finalizer(.tfu_par_env, function(e) {
       if (!is.null(e$cl)) { try(parallel::stopCluster(e$cl), silent = TRUE); e$cl <- NULL }
@@ -493,6 +448,7 @@ if (!exists(".tfu_boot_group_mean", mode = "function")) {
   
   list(nworkers = ncpus, used = "internal-new")
 }
+
 
 # =============================================================================
 # Exported tests  --------------------------------------------------------------
@@ -530,29 +486,29 @@ asym_mean_L2_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_r
                               min_frac = 0.10, seed = NULL, alpha = 0.05,
                               compute_bands = TRUE, bands_only = FALSE) {
   # --- Input preparation ---
-  prep <- .tfu_prepare_inputs(fd, X_obs, groups, observed_ratio)
+  prep <- .prepare_inputs(fd, X_obs, groups, observed_ratio)
   X_obs <- prep$X_obs; O_mat <- prep$O_mat; group_A <- prep$group_A; grid <- prep$grid
   n <- nrow(X_obs)
   
   # --- Subdomain selection ---
-  sub <- .tfu_subdomain_idx_paper(O_mat, group_A, min_frac = min_frac)
+  sub <- .limit_subdomain(O_mat, group_A, min_frac = min_frac)
   idx <- sub$idx; g <- grid[idx]
   X  <- X_obs[, idx, drop = FALSE]; O <- O_mat[, idx, drop = FALSE]
   
   # --- Group means ---
-  est <- .tfu_available_means(X, O, group_A)
+  est <- .group_mean_estimators(X, O, group_A)
   muA <- est$muA; muB <- est$muB; diff <- muA - muB
   
-  muA_tfd  <- .tfd_mean_function(muA, g)
-  muB_tfd  <- .tfd_mean_function(muB, g)
-  diff_tfd <- .tfd_mean_function(diff, g)
+  muA_tfd  <- tf::tfd(matrix(muA,  nrow = 1), arg = g)
+  muB_tfd  <- tf::tfd(matrix(muB,  nrow = 1), arg = g)
+  diff_tfd <- tf::tfd(matrix(diff, nrow = 1), arg = g)
   
   # --- Test statistic ---
   T_L2 <- n * tf::tf_integrate(diff_tfd^2, arg = g)
   
   # --- Covariance + KL truncation ---
-  K  <- .tfu_corrected_cov(X, O, group_A, muA, muB, est$pA, est$pB)
-  KL <- .tfu_kl_from_cov(K, g); lam <- KL$lam
+  K  <- .covariance_estimator(X, O, group_A, muA, muB, est$pA, est$pB)
+  KL <- .kl_decomposition(K, g); lam <- KL$lam
   
   if (!is.null(seed)) set.seed(seed)
   cum <- cumsum(lam) / sum(lam); q <- which(cum >= fve)[1]; q <- max(1L, q)
@@ -567,7 +523,7 @@ asym_mean_L2_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_r
   
   # --- Bands ---
   if (isTRUE(compute_bands)) {
-    bands <- .tfd_conf_band("L2", diff, W, n, alpha, g, method = "asymptotic")
+    bands <- .confidence_bands("L2", diff, W, n, alpha, g, method = "asymptotic")
   } else {
     bands <- list(lower = NULL, upper = NULL, band = NULL, q_alpha = NA_real_)
   }
@@ -585,8 +541,8 @@ asym_mean_L2_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_r
   }
   
   # --- Full htest output ---
-  h <- .tfu_make_htest_ext("T_{mu,L2}", T_L2, p,
-                           "L2 test (KL mixture; optional pointwise bands)",
+  h <- .create_output("T_{mu,L2}", T_L2, p,
+                           "L2 test",
                            data_name,
                            estimate = list(muA  = muA_tfd,
                                            muB  = muB_tfd,
@@ -627,25 +583,25 @@ asym_mean_sup_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_
                                fve = 0.99, B = 5000,
                                min_frac = 0.10, seed = NULL, alpha = 0.05,
                                compute_bands = TRUE, bands_only = FALSE) {
-  prep <- .tfu_prepare_inputs(fd, X_obs, groups, observed_ratio)
+  prep <- .prepare_inputs(fd, X_obs, groups, observed_ratio)
   X_obs <- prep$X_obs; O_mat <- prep$O_mat; group_A <- prep$group_A; grid <- prep$grid
   n <- nrow(X_obs)
   
-  sub <- .tfu_subdomain_idx_paper(O_mat, group_A, min_frac = min_frac)
+  sub <- .limit_subdomain(O_mat, group_A, min_frac = min_frac)
   idx <- sub$idx; g <- grid[idx]
   X  <- X_obs[, idx, drop = FALSE]; O <- O_mat[, idx, drop = FALSE]
   
-  est <- .tfu_available_means(X, O, group_A)
+  est <- .group_mean_estimators(X, O, group_A)
   muA <- est$muA; muB <- est$muB; diff <- muA - muB
   
-  muA_tfd <- .tfd_mean_function(muA, g)
-  muB_tfd <- .tfd_mean_function(muB, g)
-  diff_tfd <- .tfd_mean_function(diff, g)
+  muA_tfd  <- tf::tfd(matrix(muA,  nrow = 1), arg = g)
+  muB_tfd  <- tf::tfd(matrix(muB,  nrow = 1), arg = g)
+  diff_tfd <- tf::tfd(matrix(diff, nrow = 1), arg = g)
   
   T_D <- sqrt(n) * max(abs(diff))
   
-  K  <- .tfu_corrected_cov(X, O, group_A, muA, muB, est$pA, est$pB)
-  KL <- .tfu_kl_from_cov(K, g); lam <- KL$lam; phi <- KL$phi
+  K  <- .covariance_estimator(X, O, group_A, muA, muB, est$pA, est$pB)
+  KL <- .kl_decomposition(K, g); lam <- KL$lam; phi <- KL$phi
   
   if (!is.null(seed)) set.seed(seed)
   cum <- cumsum(lam) / sum(lam); q <- which(cum >= fve)[1]; q <- max(1L, q)
@@ -659,7 +615,7 @@ asym_mean_sup_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_
   p <- (sum(W >= T_D) + 1) / (length(W) + 1)
   
   if (isTRUE(compute_bands)) {
-    bands <- .tfd_conf_band("D", diff, W, n, alpha, g)
+    bands <- .confidence_bands("D", diff, W, n, alpha, g)
   } else {
     bands <- list(lower = NULL, upper = NULL, band = NULL, q_alpha = NA_real_)
   }
@@ -674,8 +630,8 @@ asym_mean_sup_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_
     ))
   }
   
-  h <- .tfu_make_htest_ext("T_{mu,D}", T_D, p,
-                           "Supremum test (GP approx; optional bands)",
+  h <- .create_output("T_{mu,D}", T_D, p,
+                           "Supremum test",
                            data_name,
                            estimate = list(muA  = muA_tfd,
                                            muB  = muB_tfd,
@@ -727,7 +683,7 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
     on.exit({
       try(foreach::registerDoSEQ(), silent = TRUE)
       try(doRNG::registerDoRNG(NULL), silent = TRUE)
-      try(.shutdown_parallel_tfu(), silent = TRUE)
+      try(.reset_backend(), silent = TRUE)
     }, add = TRUE)
   }
   
@@ -739,25 +695,25 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
   
   manage_backend <- match.arg(manage_backend)
   
-  prep <- .tfu_prepare_inputs(fd = fd, X_obs = X_obs, groups = groups, observed_ratio = observed_ratio)
+  prep <- .prepare_inputs(fd = fd, X_obs = X_obs, groups = groups, observed_ratio = observed_ratio)
   X_obs <- prep$X_obs; O_mat <- prep$O_mat; group_A <- prep$group_A; grid <- prep$grid
   n <- nrow(X_obs)
   
-  sub <- .tfu_subdomain_idx_paper(O_mat, group_A, min_frac = min_frac)
+  sub <- .limit_subdomain(O_mat, group_A, min_frac = min_frac)
   idx <- sub$idx
   X   <- X_obs[, idx, drop = FALSE]
   O   <- O_mat[, idx, drop = FALSE]
   g   <- grid[idx]
   
-  est  <- .tfu_available_means(X, O, group_A)
+  est  <- .group_mean_estimators(X, O, group_A)
   muA  <- est$muA; muB <- est$muB
   diff <- muA - muB
   
-  muA_tfd  <- .tfd_mean_function(muA, g)
-  muB_tfd  <- .tfd_mean_function(muB, g)
-  diff_tfd <- .tfd_mean_function(diff, g)
+  muA_tfd  <- tf::tfd(matrix(muA,  nrow = 1), arg = g)
+  muB_tfd  <- tf::tfd(matrix(muB,  nrow = 1), arg = g)
+  diff_tfd <- tf::tfd(matrix(diff, nrow = 1), arg = g)
   
-  w <- .tfu_trap_weights(g)
+  w <- .trapezoid_weights(g)
   T_L2 <- n * sum((diff^2) * w)
   T_D  <- sqrt(n) * max(abs(diff))
   
@@ -771,7 +727,7 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
   
   # --- inner bootstrap runner ---
   .run_boot <- function(manage_backend_mode = manage_backend, ncpus_eff = ncpus) {
-    be <- .tfu_ensure_backend(
+    be <- .init_parallel(
       manage_backend      = manage_backend_mode,
       ncpus               = ncpus_eff,
       worker_blas_threads = worker_blas_threads,
@@ -844,18 +800,18 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
   boot_res <- tryCatch(
     .run_boot(manage_backend_mode = manage_backend, ncpus_eff = ncpus),
     interrupt = function(e) {
-      .tfu_reset_backend()
+      .reset_backend()
       stop("Aborted by user: backend cleaned up; re-execution is possible immediately.", call. = FALSE)
     },
     error = function(e) e
   )
-  if (inherits(boot_res, "error") && .tfu_is_worker_init_error(boot_res)) {
-    .tfu_reset_backend()
+  if (inherits(boot_res, "error")) {
+    .reset_backend()
     boot_res <- tryCatch(
       .run_boot(manage_backend_mode = "force_pool",
                 ncpus_eff = max(1L, parallel::detectCores(logical = TRUE) - 1L)),
       interrupt = function(e) {
-        .tfu_reset_backend()
+        .reset_backend()
         stop("Aborted by user: backend cleaned up; re-execution is immediately possible.", call. = FALSE)
       },
       error = function(e) e
@@ -883,12 +839,12 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
   
   if ("L2" %in% stat) {
     bands <- if (isTRUE(compute_bands)) 
-      .tfd_conf_band("L2", diff, boot_diffs, n, alpha, g, method="bootstrap") 
+      .confidence_bands("L2", diff, boot_diffs, n, alpha, g, method="bootstrap") 
     else list(lower=NULL,upper=NULL,band=NULL,q_alpha=NA_real_)
     
-    results$L2 <- .tfu_make_htest_ext("T_{mu,L2}", T_L2, p_L2,
+    results$L2 <- .create_output("T_{mu,L2}", T_L2, p_L2,
                                       "Bootstrap mean test (L2)", 
-                                      if (!is.null(fd)) "fd (tfd/tfd_irreg via tf_gather)" else "X_obs",
+                                      if (!is.null(fd)) "fd (tfd/tfd_irreg)" else "X_obs",
                                       estimate = list(muA=muA_tfd, muB=muB_tfd, diff=diff_tfd, band=bands$band),
                                       parameter = c(m=length(g), B=B-n_bad),
                                       null.value = 0, alternative="two.sided")
@@ -897,10 +853,10 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
   
   if ("D" %in% stat) {
     bands <- if (isTRUE(compute_bands)) 
-      .tfd_conf_band("D", diff, boot_D, n, alpha, g, method="bootstrap") 
+      .confidence_bands("D", diff, boot_D, n, alpha, g, method="bootstrap") 
     else list(lower=NULL,upper=NULL,band=NULL,q_alpha=NA_real_)
     
-    results$D <- .tfu_make_htest_ext("T_{mu,D}", T_D, p_D,
+    results$D <- .create_output("T_{mu,D}", T_D, p_D,
                                      "Bootstrap mean test (supremum)", 
                                      if (!is.null(fd)) "fd (tfd/tfd_irreg via tf_gather)" else "X_obs",
                                      estimate = list(muA=muA_tfd, muB=muB_tfd, diff=diff_tfd, band=bands$band),
