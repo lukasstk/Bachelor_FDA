@@ -104,19 +104,19 @@ print(rbind(MCAR = check_frac(out_mcar$X_obs),
 B_asym <- 2000; B_boot <- 2000
 
 # MCAR
-res_mcar_L2 <- asym_mean_L2_test(X_obs = out_mcar$X_obs, B = B_asym)
-res_mcar_D  <- asym_mean_sup_test(X_obs = out_mcar$X_obs, B = B_asym, compute_bands = TRUE)
-res_mcar_BT_L2 <- boot_mean_test(X_obs = out_mcar$X_obs, B = B_boot, stat = "L2",
+res_mcar_L2 <- asym_mean_L2_test(X_obs = out_mcar$X_obs, n_sim = B_asym)
+res_mcar_D  <- asym_mean_sup_test(X_obs = out_mcar$X_obs, n_sim = B_asym, compute_bands = TRUE)
+res_mcar_BT_L2 <- boot_mean_test(X_obs = out_mcar$X_obs, n_boot = B_boot, stat = "L2",
                                  parallel = FALSE, compute_bands = FALSE)
-res_mcar_BT_D  <- boot_mean_test(X_obs = out_mcar$X_obs, B = B_boot, stat = "D",
+res_mcar_BT_D  <- boot_mean_test(X_obs = out_mcar$X_obs, n_boot = B_boot, stat = "D",
                                  parallel = FALSE, compute_bands = TRUE)
 
 # MNAR
-res_mnar_L2 <- asym_mean_L2_test(X_obs = out_mnar$X_obs, B = B_asym)
-res_mnar_D  <- asym_mean_sup_test(X_obs = out_mnar$X_obs, B = B_asym, compute_bands = TRUE)
-res_mnar_BT_L2 <- boot_mean_test(X_obs = out_mnar$X_obs, B = B_boot, stat = "L2",
+res_mnar_L2 <- asym_mean_L2_test(X_obs = out_mnar$X_obs, n_sim = B_asym)
+res_mnar_D  <- asym_mean_sup_test(X_obs = out_mnar$X_obs, n_sim = B_asym, compute_bands = TRUE)
+res_mnar_BT_L2 <- boot_mean_test(X_obs = out_mnar$X_obs, n_boot = B_boot, stat = "L2",
                                  parallel = FALSE, compute_bands = FALSE)
-res_mnar_BT_D  <- boot_mean_test(X_obs = out_mnar$X_obs, B = B_boot, stat = "D",
+res_mnar_BT_D  <- boot_mean_test(X_obs = out_mnar$X_obs, n_boot = B_boot, stat = "D",
                                  parallel = FALSE, compute_bands = TRUE)
 
 results <- data.frame(
@@ -211,11 +211,11 @@ suppressPackageStartupMessages({ library(tidyfun); library(tf) })
   }
   
   # NEU: Tests aus mcar.test
-  res_L2 <- asym_mean_L2_test(X_obs = out$X_obs, B = B_asym)
-  res_D  <- asym_mean_sup_test(X_obs = out$X_obs, B = B_asym)
-  res_BT_L2 <- boot_mean_test(X_obs = out$X_obs, B = B_boot,
+  res_L2 <- asym_mean_L2_test(X_obs = out$X_obs, n_sim = B_asym)
+  res_D  <- asym_mean_sup_test(X_obs = out$X_obs, n_sim = B_asym)
+  res_BT_L2 <- boot_mean_test(X_obs = out$X_obs, n_boot = B_boot,
                               stat = "L2", parallel = FALSE, compute_bands = FALSE)
-  res_BT_D  <- boot_mean_test(X_obs = out$X_obs, B = B_boot,
+  res_BT_D  <- boot_mean_test(X_obs = out$X_obs, n_boot = B_boot,
                               stat = "D",  parallel = FALSE, compute_bands = FALSE)
   
   c(

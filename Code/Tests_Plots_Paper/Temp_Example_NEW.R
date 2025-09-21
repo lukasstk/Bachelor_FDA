@@ -69,7 +69,7 @@ set.seed(2025)
 # (A) L2-Test (optional, ohne Bänder)
 res_L2 <- boot_mean_test(
   fd = fd, observed_ratio = 1, min_frac = 0.10,
-  B = 5000, alpha = 0.05,
+  n_boot = 5000, alpha = 0.05,
   parallel = TRUE, stat = "L2",
   compute_bands = FALSE, return_boot = FALSE
 )
@@ -77,7 +77,7 @@ res_L2 <- boot_mean_test(
 # (B) Supremums-/D-Test MIT Bootstrap-Bändern (Konfidenzbänder via Bootstrap)
 res_sup <- boot_mean_test(
   fd = fd, observed_ratio = 1, min_frac = 0.10,
-  B = 5000, alpha = 0.05,
+  n_boot = 5000, alpha = 0.05,
   parallel = TRUE, stat = "D",
   compute_bands = TRUE,    # <-- Bänder per Bootstrap
   return_boot = FALSE
@@ -122,16 +122,28 @@ p_groups <- ggplot(df_long_plot, aes(x = slot, y = temp, group = date, colour = 
         axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 # ---------- Rechte Seite: Diff + Bootstrap-Bänder MIT LÜCKE --------------------
-# Sortiere idx und bilde Blöcke zusammenhängender Slots (Lücke trennt Blöcke)
-o          <- order(res_sup$idx)
-idx_sorted <- res_sup$idx[o]
-block      <- c(0, cumsum(diff(idx_sorted) > 1))  # neue Gruppe, wenn Sprung > 1
+grid_sub  <- res_sup$bands$grid
+grid_full <- slot_to_hours(slots48)
 
+# Finde Positionen des Subgrids im vollen Grid
+idx_out <- vapply(grid_sub, function(g) which.min(abs(grid_full - g)), integer(1))
+
+# Sortieren + Blöcke bilden
+o          <- order(idx_out)
+idx_sorted <- idx_out[o]
+block      <- c(0, cumsum(diff(idx_sorted) > 1))
+
+# Extrahiere Differenz und Bänder
+diff_vec  <- as.numeric(as.matrix(res_sup$estimate$diff))[o]
+lower_vec <- as.numeric(res_sup$bands$lower[o])
+upper_vec <- as.numeric(res_sup$bands$upper[o])
+
+# Dataframe bauen
 df_cb <- data.frame(
-  time  = factor(slots48[idx_sorted], levels = slots48),  # alle 48 Levels
-  diff  = res_sup$diff[o],
-  lower = res_sup$lower[o],
-  upper = res_sup$upper[o],
+  time  = factor(slots48[idx_sorted], levels = slots48),
+  diff  = diff_vec,
+  lower = lower_vec,
+  upper = upper_vec,
   block = block
 )
 
@@ -185,12 +197,12 @@ res_list <- pblapply(m_grid, function(m) {
   #  - min_frac = 0 (paper-konform, keine zusätzliche 10%-Hürde), opt. hab die Hürde drin gelassen
   rb_L2 <- boot_mean_test(
     X_obs = X_sub, groups = groups_fixed,
-    B = B,parallel = TRUE, stat = "L2",
+    n_boot = B,parallel = TRUE, stat = "L2",
     compute_bands = FALSE)
   
   rb_D <- boot_mean_test(
     X_obs = X_sub, groups = groups_fixed,
-    B = B, parallel = TRUE, stat = "D",
+    n_boot = B, parallel = TRUE, stat = "D",
     compute_bands = FALSE)
   
   data.frame(

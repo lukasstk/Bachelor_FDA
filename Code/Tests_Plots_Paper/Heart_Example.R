@@ -40,11 +40,11 @@ row.names(X_obs) <- as.character(wide_hr$id)
 set.seed(2025)
 
 res_L2 <- asym_mean_L2_test(
-  fd = fd_hr
+  fd = fd_hr, bands_only = TRUE
 )
 
 res_sup <- asym_mean_sup_test(
-  fd = fd_hr
+  fd = fd_hr, bands_only = TRUE
 )
 
 cat("\n=== HEART RATE: Ergebnisse (complete vs incomplete) ===\n")
@@ -79,11 +79,13 @@ p_left <- ggplot(plot_df, aes(x = ti, y = y0, group = id, colour = group)) +
 
 # ===================== 5) Plot: Mean-Diff + Bänder (rechts) ===================
 df_band <- data.frame(
-  ti    = res_sup$grid,
-  diff  = res_sup$diff,
-  lower = res_sup$lower,
-  upper = res_sup$upper
-) %>% arrange(ti)
+  ti    = res_sup$bands$grid,
+  diff  = tf::tf_evaluate(res_sup$estimate$diff)[[1]], 
+  lower = res_sup$bands$lower,
+  upper = res_sup$bands$upper
+) %>%
+  arrange(ti)
+
 
 # Lücken in der Subdomäne als getrennte Linienblöcke zeichnen
 unique_ti <- sort(unique(df_band$ti))

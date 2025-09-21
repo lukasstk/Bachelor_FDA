@@ -13,6 +13,7 @@ library(patchwork)
 library(foreach)
 library(doRNG)
 library(pbapply)
+library(checkmate)
 
 set.seed(42)
 
@@ -112,7 +113,7 @@ res_L2 <- asym_mean_L2_test(
   X_obs   = X_obs,
   # keine groups → Auto-Gruppierung (observed_ratio = 1)
   fve     = 0.99,
-  B       = 5000,       # MC für KL-Mischung (p-Wert)
+  n_sim   = 5000,       # MC für KL-Mischung (p-Wert)
   min_frac= 0.10,
   seed    = 42,
   alpha   = alpha
@@ -124,7 +125,7 @@ res_sup <- asym_mean_sup_test(
   X_obs        = X_obs,
   # keine groups → Auto-Gruppierung (observed_ratio = 1)
   fve          = 0.99,
-  B            = 5000,
+  n_sim        = 5000,
   min_frac     = 0.10,
   seed         = 42,
   alpha        = alpha,
@@ -138,7 +139,7 @@ bands_list <- asym_mean_sup_test(
   X_obs        = X_obs,
   # keine groups → Auto-Gruppierung (observed_ratio = 1)
   fve          = 0.99,
-  B            = 5000,
+  n_sim        = 5000,
   min_frac     = 0.10,
   seed         = 42,
   alpha        = alpha,
@@ -147,22 +148,22 @@ bands_list <- asym_mean_sup_test(
 )
 
 bands <- data.frame(
-  t     = bands_list$grid,
-  diff  = bands_list$diff,
-  lower = bands_list$lower,
-  upper = bands_list$upper
+  t     = t_vals,
+  diff  = tf::tf_evaluate(bands_list$estimate$diff, arg = bands_list$bands$grid)[[1]],
+  lower = bands_list$bands$lower,
+  upper = bands_list$bands$upper
 )
 
 # Algo 5 (neu): Bootstrap-P-Werte – getrennte Aufrufe für L2 und D
 res_boot_L2 <- boot_mean_test(
   X_obs        = X_obs,
   # keine groups → Auto-Gruppierung (observed_ratio = 1)
-  B            = B_mc,
+  n_boot       = B_mc,
   min_frac     = 0.10,
   alpha        = alpha,
   parallel     = TRUE,
   stat         = "L2",
-  compute_bands= FALSE,
+  compute_bands= TRUE,
   manage_backend = "auto",
   seed         = 123
 )
@@ -170,7 +171,7 @@ res_boot_L2 <- boot_mean_test(
 res_boot_D <- boot_mean_test(
   X_obs        = X_obs,
   # keine groups → Auto-Gruppierung (observed_ratio = 1)
-  B            = B_mc,
+  n_boot        = B_mc,
   min_frac     = 0.10,
   alpha        = alpha,
   parallel     = TRUE,
@@ -253,11 +254,11 @@ one_run <- function(b_now) {
   
   # 4) keine expliziten Gruppen – Auto-Gruppierung (observed_ratio=1)
   p_L2 <- tryCatch(
-    asym_mean_L2_test(X_obs = X_obs, B = 10000)$p.value,
+    asym_mean_L2_test(X_obs = X_obs, n_sim = 10000)$p.value,
     error = function(e) NA_real_
   )
   p_D  <- tryCatch(
-    asym_mean_sup_test(X_obs = X_obs, B = 10000, compute_bands = FALSE)$p.value,
+    asym_mean_sup_test(X_obs = X_obs, n_sim = 10000, compute_bands = FALSE)$p.value,
     error = function(e) NA_real_
   )
   

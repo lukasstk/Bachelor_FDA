@@ -29,7 +29,7 @@ res_L2 <- asym_mean_L2_test(
   observed_ratio = observed_ratio,  
   min_frac = 0.10,
   fve = 0.99,
-  B = 5000,
+  n_sim = 5000,
   seed = 42
 )
 
@@ -38,7 +38,7 @@ res_sup <- asym_mean_sup_test(
   observed_ratio = observed_ratio,   
   min_frac = 0.10,
   fve = 0.99,
-  B = 5000,
+  n_sim = 5000,
   compute_bands = TRUE,
   seed = 42
 )
@@ -83,13 +83,13 @@ p_left <- ggplot(df_long, aes(x = demand, y = logprice, group = id, colour = gro
   theme(legend.position = "none")  # auf Wunsch: "bottom"
 
 # (b) Rechts: Mean-Diff + simultane Bänder
-df_band <- data.frame(
-  demand = res_sup$grid,
-  diff   = as.numeric(res_sup$diff),
-  lower  = as.numeric(res_sup$lower),
-  upper  = as.numeric(res_sup$upper)
-) |>
-  tidyr::drop_na() |>
+df_band <- tidyfun::tf_unnest(res_sup$estimate$diff) %>%
+  dplyr::select(demand = arg, diff = value) %>%
+  dplyr::mutate(
+    lower = res_sup$bands$lower,
+    upper = res_sup$bands$upper
+  ) %>%
+  tidyr::drop_na() %>%
   dplyr::arrange(demand)
 
 p_right <- ggplot(df_band, aes(x = demand)) +
