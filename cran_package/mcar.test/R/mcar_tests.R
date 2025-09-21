@@ -439,17 +439,23 @@ NULL
 #' @param bands_only Logical: if TRUE, return only band information instead of a full \code{htest}.
 #' @return `htest` (with extras) or a light band list.
 #' @examples
-#' # Brownian toy example (quick)
 #' set.seed(1)
-#' m <- 30; n <- 20
+#' m <- 50; n <- 40
 #' grid <- seq(0, 1, length.out = m)
-#' bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(m-1, sd = sqrt(d)))) }
+#' bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(length(g)-1, sd = sqrt(d)))) }
 #' X  <- t(replicate(n, bm(grid)))
-#' # Introduce simple censoring (MNAR): observe only when -1 < X < 2
-#' O  <- 1L * (X > -1 & X < 2); X[O == 0L] <- NA_real_
-#' # Run asymptotic L2 test with bands
-#' res <- asym_mean_L2_test(X_obs = X, B = 1000, seed = 1, compute_bands = TRUE)
-#' res$p.value
+#'
+#' # MNAR censoring: observed only if -1 < X(t) < 2
+#' O <- 1L * (X > -1 & X < 2)
+#' X[O == 0L] <- NA_real_
+#'
+#' # Asymptotic L2 test
+#' res_L2 <- asym_mean_L2_test(
+#'   X_obs = X,
+#'   n_sim = 2000,   
+#'   seed  = 123
+#' )
+#' res_L2$p.value
 #' @export
 asym_mean_L2_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_ratio = 1,
                               fve = 0.99, n_sim = 5000,
@@ -538,16 +544,32 @@ asym_mean_L2_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_r
 #' @return `htest` (with extras) or a light band list.
 #' @examples
 #' set.seed(1)
-#' m <- 30; n <- 20
+#' m <- 50; n <- 40
 #' grid <- seq(0, 1, length.out = m)
-#' bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(m-1, sd = sqrt(d)))) }
+#' bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(length(g)-1, sd = sqrt(d)))) }
 #' X  <- t(replicate(n, bm(grid)))
-#' O  <- 1L * (X > -1 & X < 2); X[O == 0L] <- NA_real_
-#' res <- asym_mean_sup_test(X_obs = X, B = 1000, compute_bands = TRUE, seed = 1)
-#' # simple visual:
-#' plot(res$grid, res$diff, type = "l")
-#' lines(res$grid, res$lower, lty = 2)
-#' lines(res$grid, res$upper, lty = 2)
+#'
+#' # MNAR censoring: observed only if -1 < X(t) < 2
+#' O <- 1L * (X > -1 & X < 2)
+#' X[O == 0L] <- NA_real_
+#'
+#' # Asymptotic Supremum test with simultaneous bands
+#' res_sup <- asym_mean_sup_test(
+#'   X_obs = X,
+#'   n_sim = 2000,
+#'   compute_bands = TRUE,
+#'   seed = 123
+#' )
+#' res_sup$p.value
+#'
+#' # Quick plot: mean difference + 95% simultaneous band
+#' diff_hat <- tf::tf_evaluate(res_sup$estimate$diff, arg = res_sup$bands$grid)[[1]]
+#' plot(res_sup$bands$grid, diff_hat, type = "l",
+#'      ylim = range(c(res_sup$bands$lower, res_sup$bands$upper)),
+#'      xlab = "t", ylab = "mean difference")
+#' abline(h = 0, lty = 3)
+#' lines(res_sup$bands$grid, res_sup$bands$lower, lty = 2)
+#' lines(res_sup$bands$grid, res_sup$bands$upper, lty = 2)
 #' @export
 asym_mean_sup_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_ratio = 1,
                                fve = 0.99, n_sim = 5000,
@@ -633,6 +655,37 @@ asym_mean_sup_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_
 #' @param worker_blas_threads BLAS/OpenMP threads per worker (internal pool only).
 #' @param bands_only Return only the band payload?
 #' @return `htest` (with extras) or a list of both tests.
+#' @examples
+#' set.seed(1)
+#' m <- 30; n <- 200
+#' grid <- seq(0, 1, length.out = m)
+#' bm <- function(g){ d <- diff(g)[1]; c(0, cumsum(rnorm(length(g)-1, sd = sqrt(d)))) }
+#'
+#' # Group A: standard BM; Group B: BM with mean shift
+#' X_A <- t(replicate(n/2, bm(grid)))
+#' X_B <- t(replicate(n/2, bm(grid))) + 0.3
+#' X <- rbind(X_A, X_B)
+#'
+#' # Define groups: FALSE = A, TRUE = B
+#' groups <- c(rep(FALSE, n/2), rep(TRUE, n/2))
+#'
+#' # MNAR censoring: observed only if -1 < X(t) < 2
+#' O <- 1L * (X > -1 & X < 2)
+#' X_obs <- X; X_obs[O == 0L] <- NA_real_
+#'
+#' # Bootstrap Supremum test
+#' res_boot <- boot_mean_test(
+#'   X_obs   = X_obs,
+#'   groups  = groups,
+#'   n_boot  = 2000,   
+#'   stat    = "D",       
+#'   alpha   = 0.05,
+#'   compute_bands = TRUE,
+#'   parallel = FALSE,   
+#'   seed    = 1
+#' )
+#'
+#' res_boot$p.value 
 #' @export
 boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_ratio = 1,
                            n_boot = 5000,
