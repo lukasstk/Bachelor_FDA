@@ -161,7 +161,6 @@ res_boot_L2 <- boot_mean_test(
   n_boot       = B_mc,
   min_frac     = 0.10,
   alpha        = alpha,
-  parallel     = TRUE,
   stat         = "L2",
   compute_bands= TRUE,
   manage_backend = "auto",
@@ -174,7 +173,6 @@ res_boot_D <- boot_mean_test(
   n_boot        = B_mc,
   min_frac     = 0.10,
   alpha        = alpha,
-  parallel     = TRUE,
   stat         = "D",
   compute_bands= TRUE,   # hier optional zugleich Bandbreiten-Quantil
   manage_backend = "auto",

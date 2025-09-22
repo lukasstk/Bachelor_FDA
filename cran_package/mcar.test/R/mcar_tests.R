@@ -654,7 +654,6 @@ asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_rati
 #' @inheritParams mcar_common-params
 #' @param n_boot Number of bootstrap iterations.
 #' @param alpha Significance level for bands.
-#' @param parallel Logical: run in parallel?
 #' @param ncpus Number of workers for an internal cluster (if created).
 #' @param seed RNG seed (passed to doRNG).
 #' @param stat `"L2"`, `"D"` oder `c("L2","D")`.
@@ -700,7 +699,6 @@ asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_rati
 boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 1,
                            n_boot = 5000,
                            min_frac = 0.10, alpha = 0.05,
-                           parallel = TRUE,
                            ncpus = parallel::detectCores(logical = TRUE),
                            seed = NULL,
                            stat = c("L2", "D"),
@@ -762,8 +760,13 @@ boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 
     
     cs <- chunk_size
     if (is.null(cs) || !is.finite(cs) || cs < 1L) {
+      if (nworkers == 0L) {
+        warning("No parallel backend detected \u2192 running sequentially.")
+      }
       cs <- max(50L, ceiling(n_boot / (3L * max(1L, nworkers))))
-    } else cs <- as.integer(cs)
+    } else {
+      cs <- as.integer(cs) 
+    }
     
     idx_chunks <- split(seq_len(n_boot), ceiling(seq_len(n_boot) / cs))
     

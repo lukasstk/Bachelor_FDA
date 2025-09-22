@@ -107,17 +107,17 @@ B_asym <- 2000; B_boot <- 2000
 res_mcar_L2 <- asym_mean_L2_test(X = out_mcar$X, n_sim = B_asym)
 res_mcar_D  <- asym_mean_sup_test(X = out_mcar$X, n_sim = B_asym, compute_bands = TRUE)
 res_mcar_BT_L2 <- boot_mean_test(X = out_mcar$X, n_boot = B_boot, stat = "L2",
-                                 parallel = FALSE, compute_bands = FALSE)
+                                  compute_bands = FALSE)
 res_mcar_BT_D  <- boot_mean_test(X = out_mcar$X, n_boot = B_boot, stat = "D",
-                                 parallel = FALSE, compute_bands = TRUE)
+                                  compute_bands = TRUE)
 
 # MNAR
 res_mnar_L2 <- asym_mean_L2_test(X = out_mnar$X, n_sim = B_asym)
 res_mnar_D  <- asym_mean_sup_test(X = out_mnar$X, n_sim = B_asym, compute_bands = TRUE)
 res_mnar_BT_L2 <- boot_mean_test(X = out_mnar$X, n_boot = B_boot, stat = "L2",
-                                 parallel = FALSE, compute_bands = FALSE)
+                                  compute_bands = FALSE)
 res_mnar_BT_D  <- boot_mean_test(X = out_mnar$X, n_boot = B_boot, stat = "D",
-                                 parallel = FALSE, compute_bands = TRUE)
+                                  compute_bands = TRUE)
 
 results <- data.frame(
   pattern   = c("MCAR", "MNAR"),
@@ -214,9 +214,9 @@ suppressPackageStartupMessages({ library(tidyfun); library(tf) })
   res_L2 <- asym_mean_L2_test(X = out$X, n_sim = B_asym)
   res_D  <- asym_mean_sup_test(X = out$X, n_sim = B_asym)
   res_BT_L2 <- boot_mean_test(X = out$X, n_boot = B_boot,
-                              stat = "L2", parallel = FALSE, compute_bands = FALSE)
+                              stat = "L2",  compute_bands = FALSE)
   res_BT_D  <- boot_mean_test(X = out$X, n_boot = B_boot,
-                              stat = "D",  parallel = FALSE, compute_bands = FALSE)
+                              stat = "D",   compute_bands = FALSE)
   
   c(
     asym_L2 = as.numeric(res_L2$p.value      < alpha),
