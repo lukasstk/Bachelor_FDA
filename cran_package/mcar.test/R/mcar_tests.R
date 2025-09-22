@@ -29,8 +29,8 @@ NULL
 #' @name mcar_common-params
 #' @keywords internal
 #'
-#' @param fd Optional `tfd`/`tfd_irreg` (tidyfun). If supplied, takes precedence over `X_obs`.
-#' @param X_obs Optional numeric matrix (n x m) with NAs (observations).
+#' @param fd Optional `tfd`/`tfd_irreg` (tidyfun). If supplied, takes precedence over `X`.
+#' @param X Optional numeric matrix (n x m) with NAs (observations).
 #' @param groups Optional 2-level grouping vector of length n (logical/character/factor/numeric).
 #' @param observed_ratio Threshold in \\[0,1\\] used for auto-grouping when `groups` is missing.
 #' @param min_frac Minimum per-time-point coverage per group used to select the subdomain.
@@ -131,10 +131,9 @@ NULL
 #' Coerce `tfd` to dense matrix + grid
 #' @keywords internal
 #' @noRd
-.fd_to_matrix <- function(fd) {
+.fd_tOrix <- function(fd) {
   checkmate::assert_class(fd, c("tfd", "tfd_irreg"))
   
-  # Union-Grid bestimmen
   all_grids <- tf::tf_arg(fd)
   if (is.list(all_grids)) {
     g <- sort(unique(unlist(all_grids)))
@@ -142,26 +141,25 @@ NULL
     g <- all_grids
   }
   
-  # Matrix auf diesem Grid
   X_try <- suppressWarnings(as.matrix(fd))
   checkmate::assert_matrix(X_try, mode = "numeric", min.cols = 2)
   
-  list(X_obs = X_try, grid = g)
+  list(X = X_try, grid = g)
 }
 
 #' Subdomain selector (strict + overlap fallback)
 #' @keywords internal
 #' @noRd
-.limit_subdomain <- function(O_mat, group_A, min_frac = 0.10) {
-  checkmate::assert_matrix(O_mat, any.missing = FALSE)
-  checkmate::assert_logical(group_A, len = nrow(O_mat))
+.limit_subdomain <- function(O, group_A, min_frac = 0.10) {
+  checkmate::assert_matrix(O, any.missing = FALSE)
+  checkmate::assert_logical(group_A, len = nrow(O))
   checkmate::assert_number(min_frac, lower = 0, upper = 1)
   
-  n  <- nrow(O_mat)
+  n  <- nrow(O)
   IA <- as.numeric(group_A)
   IB <- 1 - IA
-  cA <- colSums(O_mat * IA)
-  cB <- colSums(O_mat * IB)
+  cA <- colSums(O * IA)
+  cB <- colSums(O * IB)
   
   idx_strict <- which(pmin(cA, cB) > n * min_frac)
   if (length(idx_strict) >= 2L) {
@@ -181,27 +179,27 @@ NULL
 #' Prepare inputs from `tfd` or matrix
 #' @keywords internal
 #' @noRd
-.prepare_inputs <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_ratio = 1) {
+.prepare_inputs <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 1) {
   checkmate::assert_number(observed_ratio, lower = 0, upper = 1)
   
   if (!is.null(fd)) {
-    conv  <- .fd_to_matrix(fd)
-    X_obs <- conv$X_obs
+    conv  <- .fd_tOrix(fd)
+    X <- conv$X
     grid_vec <- conv$grid
   } else {
-    checkmate::assert_matrix(X_obs, mode = "numeric", min.rows = 1, min.cols = 2)
-    grid_vec <- seq(0, 1, length.out = ncol(X_obs))
+    checkmate::assert_matrix(X, mode = "numeric", min.rows = 1, min.cols = 2)
+    grid_vec <- seq(0, 1, length.out = ncol(X))
   }
   
-  n <- nrow(X_obs)
-  O_mat <- 1L * (!is.na(X_obs))
+  n <- nrow(X)
+  O <- 1L * (!is.na(X))
   
   if (!is.null(groups)) {
     checkmate::assert_atomic_vector(groups, len = n, any.missing = FALSE)
     group_A <- .groups_to_logical(groups)
     
     # Label swap falls nötig
-    obs_frac <- rowMeans(O_mat != 0)
+    obs_frac <- rowMeans(O != 0)
     meanA <- mean(obs_frac[group_A], na.rm = TRUE)
     meanB <- mean(obs_frac[!group_A], na.rm = TRUE)
     if (meanA < meanB) {
@@ -212,15 +210,15 @@ NULL
       ))
     }
   } else {
-    group_A <- rowMeans(O_mat != 0) >= observed_ratio
+    group_A <- rowMeans(O != 0) >= observed_ratio
     if (sum(group_A) == 0L || sum(!group_A) == 0L) {
       stop("Auto-grouping failed: one group empty. Adjust `observed_ratio`.")
     }
   }
   
   list(
-    X_obs   = X_obs,
-    O_mat   = O_mat,
+    X   = X,
+    O   = O,
     group_A = as.logical(group_A),
     grid    = grid_vec
   )
@@ -246,29 +244,29 @@ NULL
 #' Available-mean estimators by group
 #' @keywords internal
 #' @noRd
-.group_mean_estimators <- function(X_obs, O_mat, group_A) {
-  n  <- nrow(X_obs)
+.group_mean_estimators <- function(X, O, group_A) {
+  n  <- nrow(X)
   IA <- as.numeric(group_A); IB <- 1 - IA
-  pA_hat <- colSums(O_mat * IA) / n
-  pB_hat <- colSums(O_mat * IB) / n
-  muA_hat <- colSums(X_obs * IA, na.rm = TRUE) / (n * pA_hat)
-  muB_hat <- colSums(X_obs * IB, na.rm = TRUE) / (n * pB_hat)
+  pA_hat <- colSums(O * IA) / n
+  pB_hat <- colSums(O * IB) / n
+  muA_hat <- colSums(X * IA, na.rm = TRUE) / (n * pA_hat)
+  muB_hat <- colSums(X * IB, na.rm = TRUE) / (n * pB_hat)
   list(muA = muA_hat, muB = muB_hat, pA = pA_hat, pB = pB_hat)
 }
 
 #' Corrected covariance under partial observation
 #' @keywords internal
 #' @noRd
-.covariance_estimator <- function(X_obs, O_mat, group_A, muA_hat, muB_hat, pA_hat, pB_hat) {
-  n  <- nrow(X_obs)
+.covariance_estimator <- function(X, O, group_A, muA_hat, muB_hat, pA_hat, pB_hat) {
+  n  <- nrow(X)
   IA <- as.numeric(group_A)
   IB <- 1 - IA
-  Xtilde <- X_obs
-  Xtilde[ group_A, ] <- sweep(X_obs[ group_A, , drop = FALSE], 2, muA_hat, `-`)
-  Xtilde[!group_A, ] <- sweep(X_obs[!group_A, , drop = FALSE], 2, muB_hat, `-`)
+  Xtilde <- X
+  Xtilde[ group_A, ] <- sweep(X[ group_A, , drop = FALSE], 2, muA_hat, `-`)
+  Xtilde[!group_A, ] <- sweep(X[!group_A, , drop = FALSE], 2, muB_hat, `-`)
   Xtilde[is.na(Xtilde)] <- 0
-  A_resid <- sweep((Xtilde * O_mat) * IA, 2, pA_hat, "/")
-  B_resid <- sweep((Xtilde * O_mat) * IB, 2, pB_hat, "/")
+  A_resid <- sweep((Xtilde * O) * IA, 2, pA_hat, "/")
+  B_resid <- sweep((Xtilde * O) * IB, 2, pB_hat, "/")
   K_hat <- (crossprod(A_resid) + crossprod(B_resid)) / n
   (K_hat + t(K_hat)) / 2
 }
@@ -451,62 +449,62 @@ NULL
 #'
 #' # Asymptotic L2 test
 #' res_L2 <- asym_mean_L2_test(
-#'   X_obs = X,
+#'   X = X,
 #'   n_sim = 2000,   
 #'   seed  = 123
 #' )
 #' res_L2$p.value
 #' @export
-asym_mean_L2_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_ratio = 1,
+asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 1,
                               fve = 0.99, n_sim = 5000,
                               min_frac = 0.10, seed = NULL, alpha = 0.05,
                               compute_bands = TRUE, bands_only = FALSE) {
-  # --- Input preparation ---
-  prep <- .prepare_inputs(fd, X_obs, groups, observed_ratio)
-  X_obs <- prep$X_obs; O_mat <- prep$O_mat; group_A <- prep$group_A; grid <- prep$grid
-  n <- nrow(X_obs)
+  prep <- .prepare_inputs(fd, X, groups, observed_ratio)
+  X <- prep$X
+  O <- prep$O
+  group_A <- prep$group_A
+  grid <- prep$grid
+  n <- nrow(X)
   
-  # --- Subdomain selection ---
-  sub <- .limit_subdomain(O_mat, group_A, min_frac = min_frac)
-  idx <- sub$idx; g <- grid[idx]
-  X  <- X_obs[, idx, drop = FALSE]; O <- O_mat[, idx, drop = FALSE]
+  subdomain <- .limit_subdomain(O, group_A, min_frac = min_frac)
+  idx <- subdomain$idx
+  subgrid <- grid[idx]
+  X_sub  <- X[, idx, drop = FALSE]
+  O_sub <- O[, idx, drop = FALSE]
   
-  # --- Group means ---
-  est <- .group_mean_estimators(X, O, group_A)
-  muA <- est$muA; muB <- est$muB; diff <- muA - muB
+  est <- .group_mean_estimators(X_sub, O_sub, group_A)
+  muA <- est$muA
+  muB <- est$muB
+  diff <- muA - muB
   
-  muA_tfd  <- tf::tfd(matrix(muA,  nrow = 1), arg = g)
-  muB_tfd  <- tf::tfd(matrix(muB,  nrow = 1), arg = g)
-  diff_tfd <- tf::tfd(matrix(diff, nrow = 1), arg = g)
+  muA_tfd  <- tf::tfd(matrix(muA,  nrow = 1), arg = subgrid)
+  muB_tfd  <- tf::tfd(matrix(muB,  nrow = 1), arg = subgrid)
+  diff_tfd <- tf::tfd(matrix(diff, nrow = 1), arg = subgrid)
   
-  # --- Test statistic ---
-  T_L2 <- n * tf::tf_integrate(diff_tfd^2, arg = g)
+  T_L2 <- n * tf::tf_integrate(diff_tfd^2, arg = subgrid)
   
-  # --- Covariance + KL truncation ---
-  K  <- .covariance_estimator(X, O, group_A, muA, muB, est$pA, est$pB)
-  KL <- .kl_decomposition(K, g); lam <- KL$lam
+  K  <- .covariance_estimator(X_sub, O_sub, group_A, muA, muB, est$pA, est$pB)
+  KL <- .kl_decomposition(K, subgrid); lam <- KL$lam
   
   if (!is.null(seed)) set.seed(seed)
-  cum <- cumsum(lam) / sum(lam); q <- which(cum >= fve)[1]; q <- max(1L, q)
+  cum <- cumsum(lam) / sum(lam)
+  q <- which(cum >= fve)[1]
+  q <- max(1L, q)
   lam_q <- lam[seq_len(q)]
   
-  # --- Monte Carlo draws ---
   Z <- matrix(rnorm(q * n_sim), nrow = q)
   W <- colSums((Z^2) * lam_q)
   
-  # --- p-value ---
   p <- (sum(W >= T_L2) + 1) / (length(W) + 1)
   
-  # --- Bands ---
   if (isTRUE(compute_bands)) {
-    bands <- .confidence_bands("L2", diff, W, n, alpha, g, method = "asymptotic")
+    bands <- .confidence_bands("L2", diff, W, n, alpha, subgrid, method = "asymptotic")
   } else {
     bands <- list(lower = NULL, upper = NULL, band = NULL)
   }
   
-  data_name <- if (!is.null(fd)) "fd" else "X_obs"
+  data_name <- if (!is.null(fd)) "fd" else "X"
   
-  # --- bands_only output ---
   if (isTRUE(bands_only)) {
     return(list(
       estimate = list(muA = muA_tfd,
@@ -517,7 +515,6 @@ asym_mean_L2_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_r
     ))
   }
   
-  # --- Full htest output ---
   output <- .create_output("T_{mu,L2}", T_L2, p,
                            "L2 test",
                            data_name,
@@ -555,7 +552,7 @@ asym_mean_L2_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_r
 #'
 #' # Asymptotic Supremum test with simultaneous bands
 #' res_sup <- asym_mean_sup_test(
-#'   X_obs = X,
+#'   X = X,
 #'   n_sim = 2000,
 #'   compute_bands = TRUE,
 #'   seed = 123
@@ -571,33 +568,45 @@ asym_mean_L2_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_r
 #' lines(res_sup$bands$grid, res_sup$bands$lower, lty = 2)
 #' lines(res_sup$bands$grid, res_sup$bands$upper, lty = 2)
 #' @export
-asym_mean_sup_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_ratio = 1,
+asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 1,
                                fve = 0.99, n_sim = 5000,
                                min_frac = 0.10, seed = NULL, alpha = 0.05,
                                compute_bands = TRUE, bands_only = FALSE) {
-  prep <- .prepare_inputs(fd, X_obs, groups, observed_ratio)
-  X_obs <- prep$X_obs; O_mat <- prep$O_mat; group_A <- prep$group_A; grid <- prep$grid
-  n <- nrow(X_obs)
+  prep <- .prepare_inputs(fd, X, groups, observed_ratio)
+  X <- prep$X
+  O <- prep$O
+  group_A <- prep$group_A
+  grid <- prep$grid
+  n <- nrow(X)
   
-  sub <- .limit_subdomain(O_mat, group_A, min_frac = min_frac)
-  idx <- sub$idx; g <- grid[idx]
-  X  <- X_obs[, idx, drop = FALSE]; O <- O_mat[, idx, drop = FALSE]
+  subdomain <- .limit_subdomain(O, group_A, min_frac = min_frac)
+  idx <- subdomain$idx
+  subgrid <- grid[idx]
+  X_sub  <- X[, idx, drop = FALSE]
+  O_sub <- O[, idx, drop = FALSE]
   
-  est <- .group_mean_estimators(X, O, group_A)
-  muA <- est$muA; muB <- est$muB; diff <- muA - muB
+  est <- .group_mean_estimators(X_sub, O_sub, group_A)
+  muA <- est$muA
+  muB <- est$muB
+  diff <- muA - muB
   
-  muA_tfd  <- tf::tfd(matrix(muA,  nrow = 1), arg = g)
-  muB_tfd  <- tf::tfd(matrix(muB,  nrow = 1), arg = g)
-  diff_tfd <- tf::tfd(matrix(diff, nrow = 1), arg = g)
+  muA_tfd  <- tf::tfd(matrix(muA,  nrow = 1), arg = subgrid)
+  muB_tfd  <- tf::tfd(matrix(muB,  nrow = 1), arg = subgrid)
+  diff_tfd <- tf::tfd(matrix(diff, nrow = 1), arg = subgrid)
   
   T_D <- sqrt(n) * max(abs(diff))
   
-  K  <- .covariance_estimator(X, O, group_A, muA, muB, est$pA, est$pB)
-  KL <- .kl_decomposition(K, g); lam <- KL$lam; phi <- KL$phi
+  K  <- .covariance_estimator(X_sub, O_sub, group_A, muA, muB, est$pA, est$pB)
+  KL <- .kl_decomposition(K, subgrid)
+  lam <- KL$lam
+  phi <- KL$phi
   
   if (!is.null(seed)) set.seed(seed)
-  cum <- cumsum(lam) / sum(lam); q <- which(cum >= fve)[1]; q <- max(1L, q)
-  lam_q <- lam[seq_len(q)]; phi_q <- phi[, seq_len(q), drop = FALSE]
+  cum <- cumsum(lam) / sum(lam)
+  q <- which(cum >= fve)[1]
+  q <- max(1L, q)
+  lam_q <- lam[seq_len(q)]
+  phi_q <- phi[, seq_len(q), drop = FALSE]
   A <- sweep(phi_q, 2, sqrt(lam_q), "*")  
   
   Z <- matrix(rnorm(q * n_sim), nrow = q)     
@@ -607,12 +616,12 @@ asym_mean_sup_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_
   p <- (sum(W >= T_D) + 1) / (length(W) + 1)
   
   if (isTRUE(compute_bands)) {
-    bands <- .confidence_bands("D", diff, W, n, alpha, g)
+    bands <- .confidence_bands("D", diff, W, n, alpha, subgrid)
   } else {
     bands <- list(lower = NULL, upper = NULL, band = NULL)
   }
   
-  data_name <- if (!is.null(fd)) "fd" else "X_obs"
+  data_name <- if (!is.null(fd)) "fd" else "X"
   
   if (isTRUE(bands_only)) {
     return(list(
@@ -671,11 +680,11 @@ asym_mean_sup_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_
 #'
 #' # MNAR censoring: observed only if -1 < X(t) < 2
 #' O <- 1L * (X > -1 & X < 2)
-#' X_obs <- X; X_obs[O == 0L] <- NA_real_
+#' X <- X; X[O == 0L] <- NA_real_
 #'
 #' # Bootstrap Supremum test
 #' res_boot <- boot_mean_test(
-#'   X_obs   = X_obs,
+#'   X   = X,
 #'   groups  = groups,
 #'   n_boot  = 2000,   
 #'   stat    = "D",       
@@ -687,7 +696,7 @@ asym_mean_sup_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_
 #'
 #' res_boot$p.value 
 #' @export
-boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_ratio = 1,
+boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 1,
                            n_boot = 5000,
                            min_frac = 0.10, alpha = 0.05,
                            parallel = TRUE,
@@ -708,24 +717,29 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
   checkmate::assert_choice(manage_backend, c("auto","force_pool","sequential"))
   
   # --- Inputs vorbereiten ---
-  prep <- .prepare_inputs(fd, X_obs, groups, observed_ratio)
-  X_obs <- prep$X_obs; O_mat <- prep$O_mat; group_A <- prep$group_A; grid <- prep$grid
-  n <- nrow(X_obs)
+  prep <- .prepare_inputs(fd, X, groups, observed_ratio)
+  X <- prep$X
+  O <- prep$O
+  group_A <- prep$group_A
+  grid <- prep$grid
+  n <- nrow(X)
   
-  sub <- .limit_subdomain(O_mat, group_A, min_frac = min_frac)
-  idx <- sub$idx
-  g   <- grid[idx]
-  X   <- X_obs[, idx, drop = FALSE]
-  O   <- O_mat[, idx, drop = FALSE]
+  subdomain <- .limit_subdomain(O, group_A, min_frac = min_frac)
+  idx <- subdomain$idx
+  subgrid   <- grid[idx]
+  X_sub   <- X[, idx, drop = FALSE]
+  O_sub   <- O[, idx, drop = FALSE]
   
-  est  <- .group_mean_estimators(X, O, group_A)
-  muA  <- est$muA; muB <- est$muB; diff <- muA - muB
+  est  <- .group_mean_estimators(X_sub, O_sub, group_A)
+  muA  <- est$muA
+  muB <- est$muB
+  diff <- muA - muB
   
-  muA_tfd  <- tf::tfd(matrix(muA, 1), arg = g)
-  muB_tfd  <- tf::tfd(matrix(muB, 1), arg = g)
-  diff_tfd <- tf::tfd(matrix(diff, 1), arg = g)
+  muA_tfd  <- tf::tfd(matrix(muA, 1), arg = subgrid)
+  muB_tfd  <- tf::tfd(matrix(muB, 1), arg = subgrid)
+  diff_tfd <- tf::tfd(matrix(diff, 1), arg = subgrid)
   
-  w <- .trapezoid_weights(g)
+  w <- .trapezoid_weights(subgrid)
   
   # --- Teststatistiken ---
   T_L2 <- if ("L2" %in% stat) n * sum((diff^2) * w) else NULL
@@ -733,9 +747,9 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
   
   # --- Daten zentrieren ---
   IA <- as.numeric(group_A); IB <- 1 - IA
-  X_cent <- X
-  if (any(IA == 1)) X_cent[IA == 1, ] <- sweep(X[IA == 1,,drop=FALSE], 2, muA, `-`)
-  if (any(IB == 1)) X_cent[IB == 1, ] <- sweep(X[IB == 1,,drop=FALSE], 2, muB, `-`)
+  X_cent <- X_sub
+  if (any(IA == 1)) X_cent[IA == 1, ] <- sweep(X_sub[IA == 1,,drop=FALSE], 2, muA, `-`)
+  if (any(IB == 1)) X_cent[IB == 1, ] <- sweep(X_sub[IB == 1,,drop=FALSE], 2, muB, `-`)
   
   if (!is.null(seed)) set.seed(seed)
   
@@ -751,29 +765,41 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
     
     idx_chunks <- split(seq_len(n_boot), ceiling(seq_len(n_boot) / cs))
     
-    n_ <- n; X_cent_ <- X_cent; O_ <- O; group_A_ <- group_A; w_ <- w
+    n_ <- n
+    X_cent_ <- X_cent
+    O_ <- O_sub
+    group_A_ <- group_A
+    w_ <- w
+    
     do_L2 <- "L2" %in% stat; do_D <- "D" %in% stat
     
     boot_list <- foreach::foreach(ch = idx_chunks, .inorder = FALSE) %dorng% {
       out <- matrix(NA_real_, nrow = length(ch), ncol = sum(c(do_L2, do_D)) + 1L)
-      cn  <- c(if (do_L2) "L2", if (do_D) "D", "redraws"); colnames(out) <- cn
+      cn  <- c(if (do_L2) "L2", if (do_D) "D", "redraws")
+      colnames(out) <- cn
       diffs <- matrix(NA_real_, nrow = length(ch), ncol = ncol(X_cent_))
       
       for (ii in seq_along(ch)) {
         redraws <- 0L
         repeat {
           samp_idx <- sample.int(n_, n_, replace = TRUE)
-          gA_samp <- group_A_[samp_idx]; IA <- as.numeric(gA_samp); IB <- 1 - IA
+          gA_samp <- group_A_[samp_idx]
+          IA <- as.numeric(gA_samp)
+          IB <- 1 - IA
           OA <- (O_[samp_idx,,drop=FALSE] * IA)
           OB <- (O_[samp_idx,,drop=FALSE] * IB)
           if (all(colSums(OA) > 0) && all(colSums(OB) > 0)) break
           redraws <- redraws + 1L
         }
         Xs <- X_cent_[samp_idx,,drop=FALSE]
-        XA <- Xs; XA[IB==1,] <- NA
+        XA <- Xs
+        XA[IB==1,] <- NA
         muA_b <- colSums(replace(XA, is.na(XA), 0)) / (n_ * colSums(OA)/n_)
-        XB <- Xs; XB[IA==1,] <- NA
+        
+        XB <- Xs
+        XB[IA==1,] <- NA
         muB_b <- colSums(replace(XB, is.na(XB), 0)) / (n_ * colSums(OB)/n_)
+        
         d_b <- muA_b - muB_b
         
         vals <- c()
@@ -799,21 +825,22 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
   boot_mat   <- boot_res$boot_mat
   boot_diffs <- boot_res$boot_diffs
   
-  # --- Ergebnisse ---
   outputs <- list()
   
   for (s in stat) {
     if (s == "L2") {
-      boot_vals <- boot_mat[, "L2"]; boot_vals <- boot_vals[!is.na(boot_vals)]
+      boot_vals <- boot_mat[, "L2"]
+      boot_vals <- boot_vals[!is.na(boot_vals)]
       T_val <- T_L2
-      bands <- if (compute_bands) .confidence_bands("L2", diff, boot_diffs, n, alpha, g, "bootstrap") else NULL
+      bands <- if (compute_bands) .confidence_bands("L2", diff, boot_diffs, n, alpha, subgrid, "bootstrap") else NULL
       method <- "Bootstrap mean test (L2)"
       stat_name <- "T_{mu,L2}"
     }
     if (s == "D") {
-      boot_vals <- boot_mat[, "D"]; boot_vals <- boot_vals[!is.na(boot_vals)]
+      boot_vals <- boot_mat[, "D"]
+      boot_vals <- boot_vals[!is.na(boot_vals)]
       T_val <- T_D
-      bands <- if (compute_bands) .confidence_bands("D", diff, boot_vals, n, alpha, g, "bootstrap") else NULL
+      bands <- if (compute_bands) .confidence_bands("D", diff, boot_vals, n, alpha, subgrid, "bootstrap") else NULL
       method <- "Bootstrap mean test (supremum)"
       stat_name <- "T_{mu,D}"
     }
@@ -825,7 +852,7 @@ boot_mean_test <- function(fd = NULL, X_obs = NULL, groups = NULL, observed_rati
       stat_value  = T_val,
       p_value     = p_val,
       method      = method,
-      data_name   = if (!is.null(fd)) "fd" else "X_obs",
+      data_name   = if (!is.null(fd)) "fd" else "X",
       estimate    = list(muA=muA_tfd, 
                          muB=muB_tfd, 
                          diff=diff_tfd),

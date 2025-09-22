@@ -29,12 +29,12 @@ wide_hr <- rate_dt |>
     values_from = y0
   )
 
-# Matrix X_obs (ohne id)
-X_obs <- wide_hr |>
+# Matrix X (ohne id)
+X <- wide_hr |>
   dplyr::select(-id) |>
   as.matrix()
 
-row.names(X_obs) <- as.character(wide_hr$id)  
+row.names(X) <- as.character(wide_hr$id)  
 
 # ===================== 3) Tests (asymptotisch + Bänder) ======================
 set.seed(2025)
@@ -53,9 +53,9 @@ print(res_sup)
 
 # ===================== 4) Plot: Kurvenschar (links) ===========================
 # Gruppierung wie in den Tests: complete (alle Zeitpunkte belegt) vs incomplete
-group_A <- rowMeans(!is.na(X_obs)) == 1
+group_A <- rowMeans(!is.na(X)) == 1
 grp_df  <- tibble(
-  id    = row.names(X_obs),
+  id    = row.names(X),
   group = ifelse(group_A, "Complete", "Incomplete")
 )
 

@@ -59,9 +59,9 @@ algo_mnar_mask <- function(x_row, miss_frac = 0.30, beta = 5, jitter_sd = 0.05,
 }
 
 # ======================================================================
-# Helfer: X_obs erzeugen
+# Helfer: X erzeugen
 # ======================================================================
-make_X_obs <- function(X_true, pattern = c("MCAR","MNAR"),
+make_X <- function(X_true, pattern = c("MCAR","MNAR"),
                        p_complete = 0.5, miss_frac = 0.30,
                        beta = 5, block_k = 0L) {
   pattern <- match.arg(pattern)
@@ -76,15 +76,15 @@ make_X_obs <- function(X_true, pattern = c("MCAR","MNAR"),
       algo_mnar_mask(X_true[i, ], miss_frac = miss_frac, beta = beta, block_k = block_k)
     }
   }
-  X_obs <- X_true; X_obs[O == 0L] <- NA_real_
-  list(X_obs = X_obs, is_complete = rowSums(is.na(X_obs)) == 0)
+  X <- X_true; X[O == 0L] <- NA_real_
+  list(X = X, is_complete = rowSums(is.na(X)) == 0)
 }
 
 # ======================================================================
 # Zwei einmalige Datensätze
 # ======================================================================
-out_mcar <- make_X_obs(X_true, "MCAR", p_complete = P_COMPLETE, miss_frac = MISS_FRAC)
-out_mnar <- make_X_obs(X_true, "MNAR", p_complete = P_COMPLETE, miss_frac = MISS_FRAC, beta = 5, block_k = 0L)
+out_mcar <- make_X(X_true, "MCAR", p_complete = P_COMPLETE, miss_frac = MISS_FRAC)
+out_mnar <- make_X(X_true, "MNAR", p_complete = P_COMPLETE, miss_frac = MISS_FRAC, beta = 5, block_k = 0L)
 
 # (optional) Kontrolle der realisierten Anteile
 check_frac <- function(X) c(
@@ -92,8 +92,8 @@ check_frac <- function(X) c(
   mean_per_curve = mean(rowMeans(is.na(X))),
   mean_incomplete = mean(rowMeans(is.na(X))[rowSums(is.na(X)) > 0], na.rm = TRUE)
 )
-print(rbind(MCAR = check_frac(out_mcar$X_obs),
-            MNAR = check_frac(out_mnar$X_obs)))
+print(rbind(MCAR = check_frac(out_mcar$X),
+            MNAR = check_frac(out_mnar$X)))
 
 # ======================================================================
 # Tests je Pattern – NEUE FUNKTIONEN
@@ -104,19 +104,19 @@ print(rbind(MCAR = check_frac(out_mcar$X_obs),
 B_asym <- 2000; B_boot <- 2000
 
 # MCAR
-res_mcar_L2 <- asym_mean_L2_test(X_obs = out_mcar$X_obs, n_sim = B_asym)
-res_mcar_D  <- asym_mean_sup_test(X_obs = out_mcar$X_obs, n_sim = B_asym, compute_bands = TRUE)
-res_mcar_BT_L2 <- boot_mean_test(X_obs = out_mcar$X_obs, n_boot = B_boot, stat = "L2",
+res_mcar_L2 <- asym_mean_L2_test(X = out_mcar$X, n_sim = B_asym)
+res_mcar_D  <- asym_mean_sup_test(X = out_mcar$X, n_sim = B_asym, compute_bands = TRUE)
+res_mcar_BT_L2 <- boot_mean_test(X = out_mcar$X, n_boot = B_boot, stat = "L2",
                                  parallel = FALSE, compute_bands = FALSE)
-res_mcar_BT_D  <- boot_mean_test(X_obs = out_mcar$X_obs, n_boot = B_boot, stat = "D",
+res_mcar_BT_D  <- boot_mean_test(X = out_mcar$X, n_boot = B_boot, stat = "D",
                                  parallel = FALSE, compute_bands = TRUE)
 
 # MNAR
-res_mnar_L2 <- asym_mean_L2_test(X_obs = out_mnar$X_obs, n_sim = B_asym)
-res_mnar_D  <- asym_mean_sup_test(X_obs = out_mnar$X_obs, n_sim = B_asym, compute_bands = TRUE)
-res_mnar_BT_L2 <- boot_mean_test(X_obs = out_mnar$X_obs, n_boot = B_boot, stat = "L2",
+res_mnar_L2 <- asym_mean_L2_test(X = out_mnar$X, n_sim = B_asym)
+res_mnar_D  <- asym_mean_sup_test(X = out_mnar$X, n_sim = B_asym, compute_bands = TRUE)
+res_mnar_BT_L2 <- boot_mean_test(X = out_mnar$X, n_boot = B_boot, stat = "L2",
                                  parallel = FALSE, compute_bands = FALSE)
-res_mnar_BT_D  <- boot_mean_test(X_obs = out_mnar$X_obs, n_boot = B_boot, stat = "D",
+res_mnar_BT_D  <- boot_mean_test(X = out_mnar$X, n_boot = B_boot, stat = "D",
                                  parallel = FALSE, compute_bands = TRUE)
 
 results <- data.frame(
@@ -131,12 +131,12 @@ print(results, row.names = FALSE)
 # ======================================================================
 # Visualisierung (diff & Simultanbänder aus den neuen Methoden)
 # ======================================================================
-y_range <- range(c(out_mcar$X_obs, out_mnar$X_obs), na.rm = TRUE)
+y_range <- range(c(out_mcar$X, out_mnar$X), na.rm = TRUE)
 par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
 
-plot_panel <- function(title, X_obs, is_complete) {
-  Xc <- X_obs[ is_complete, , drop = FALSE]
-  Xi <- X_obs[!is_complete, , drop = FALSE]
+plot_panel <- function(title, X, is_complete) {
+  Xc <- X[ is_complete, , drop = FALSE]
+  Xi <- X[!is_complete, , drop = FALSE]
   
   if (nrow(Xc) > 0) {
     matplot(grid, t(Xc), type = "l", lty = 1, lwd = 1,
@@ -156,8 +156,8 @@ plot_panel <- function(title, X_obs, is_complete) {
          col = c("grey70", "black"))
 }
 
-plot_panel("MCAR: complete=grau, incomplete=schwarz", out_mcar$X_obs, out_mcar$is_complete)
-plot_panel("MNAR: complete=grau, incomplete=schwarz", out_mnar$X_obs, out_mnar$is_complete)
+plot_panel("MCAR: complete=grau, incomplete=schwarz", out_mcar$X, out_mcar$is_complete)
+plot_panel("MNAR: complete=grau, incomplete=schwarz", out_mnar$X, out_mnar$is_complete)
 par(mfrow = c(1, 1))
 
 # Optional: diff + Bands (aus boot_mean_test stat="D")
@@ -204,18 +204,18 @@ suppressPackageStartupMessages({ library(tidyfun); library(tf) })
   X_true <- sam$X_true
   
   out <- if (pattern == "MCAR") {
-    make_X_obs(X_true, "MCAR", p_complete = p_complete, miss_frac = miss_frac)
+    make_X(X_true, "MCAR", p_complete = p_complete, miss_frac = miss_frac)
   } else {
-    make_X_obs(X_true, "MNAR", p_complete = p_complete, miss_frac = miss_frac,
+    make_X(X_true, "MNAR", p_complete = p_complete, miss_frac = miss_frac,
                beta = beta, block_k = block_k)
   }
   
   # NEU: Tests aus mcar.test
-  res_L2 <- asym_mean_L2_test(X_obs = out$X_obs, n_sim = B_asym)
-  res_D  <- asym_mean_sup_test(X_obs = out$X_obs, n_sim = B_asym)
-  res_BT_L2 <- boot_mean_test(X_obs = out$X_obs, n_boot = B_boot,
+  res_L2 <- asym_mean_L2_test(X = out$X, n_sim = B_asym)
+  res_D  <- asym_mean_sup_test(X = out$X, n_sim = B_asym)
+  res_BT_L2 <- boot_mean_test(X = out$X, n_boot = B_boot,
                               stat = "L2", parallel = FALSE, compute_bands = FALSE)
-  res_BT_D  <- boot_mean_test(X_obs = out$X_obs, n_boot = B_boot,
+  res_BT_D  <- boot_mean_test(X = out$X, n_boot = B_boot,
                               stat = "D",  parallel = FALSE, compute_bands = FALSE)
   
   c(

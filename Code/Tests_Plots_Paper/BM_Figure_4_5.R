@@ -56,25 +56,25 @@ rownames(bm_mat) <- ids
 
 # --- Beobachtungsmatrix rein aus dem Mechanismus erzeugen ---
 if (mechanism == "MCAR") {
-  O_mat <- t(sapply(seq_len(n), function(i) make_O_mcar(grid)))
+  O <- t(sapply(seq_len(n), function(i) make_O_mcar(grid)))
 } else if (mechanism == "MNAR") {
-  O_mat <- t(apply(bm_mat, 1L, make_O_mnar))
+  O <- t(apply(bm_mat, 1L, make_O_mnar))
 } else {
   stop("Unknown mechanism")
 }
-storage.mode(O_mat) <- "integer"
-rownames(O_mat) <- ids
-colnames(O_mat) <- NULL
+storage.mode(O) <- "integer"
+rownames(O) <- ids
+colnames(O) <- NULL
 
 # Beobachtete Werte (NA außerhalb Beobachtung)
-X_obs <- bm_mat
-X_obs[O_mat == 0L] <- NA_real_
+X <- bm_mat
+X[O == 0L] <- NA_real_
 
 # ---------------- Long-Format bauen (df_long) ----------------
 # Spaltennamen als echte t-Werte, damit pivot_longer sauber wird
-colnames(X_obs) <- formatC(grid, digits = 12, format = "fg", flag = "#")
+colnames(X) <- formatC(grid, digits = 12, format = "fg", flag = "#")
 
-df_long <- as.data.frame(X_obs) |>
+df_long <- as.data.frame(X) |>
   mutate(id = ids) |>
   tidyr::pivot_longer(
     cols = -id,
@@ -89,7 +89,7 @@ df_long <- as.data.frame(X_obs) |>
 grid <- sort(unique(df_long$t))
 ids  <- unique(df_long$id)
 
-# 2) Wide-Matrix X_obs (n x m)
+# 2) Wide-Matrix X (n x m)
 df_wide <- df_long %>%
   select(id, t, x) %>%
   mutate(t = as.numeric(t)) %>%
@@ -97,12 +97,12 @@ df_wide <- df_long %>%
   arrange(match(id, ids))
 
 ord   <- order(as.numeric(names(df_wide)[-1]))
-X_obs <- as.matrix(df_wide[, c(1 + ord)])
-rownames(X_obs) <- df_wide$id
-colnames(X_obs) <- NULL
+X <- as.matrix(df_wide[, c(1 + ord)])
+rownames(X) <- df_wide$id
+colnames(X) <- NULL
 
-# 3) Beobachtungsmatrix O_mat aus NA-Maske
-O_mat <- 1L * !is.na(X_obs)
+# 3) Beobachtungsmatrix O aus NA-Maske
+O <- 1L * !is.na(X)
 
 # ---------------- Neue Algorithmen aufrufen (Auto-Gruppierung) ----------------
 B_mc  <- 2000
@@ -110,7 +110,7 @@ alpha <- 0.05
 
 # Algo 1 (neu): L2-Test (asymptotisch)
 res_L2 <- asym_mean_L2_test(
-  X_obs   = X_obs,
+  X   = X,
   # keine groups → Auto-Gruppierung (observed_ratio = 1)
   fve     = 0.99,
   n_sim   = 5000,       # MC für KL-Mischung (p-Wert)
@@ -122,7 +122,7 @@ cat("Algo1 L2  -> stat:", unname(res_L2$statistic), " p:", res_L2$p.value, "\n")
 
 # Algo 2 (neu): Supremums-Test (asymptotisch) + simultane Bänder
 res_sup <- asym_mean_sup_test(
-  X_obs        = X_obs,
+  X        = X,
   # keine groups → Auto-Gruppierung (observed_ratio = 1)
   fve          = 0.99,
   n_sim        = 5000,
@@ -136,7 +136,7 @@ cat("Algo2 Sup -> stat:", unname(res_sup$statistic), " p:", res_sup$p.value, "\n
 
 # Bänder (kompakte Liste)
 bands_list <- asym_mean_sup_test(
-  X_obs        = X_obs,
+  X        = X,
   # keine groups → Auto-Gruppierung (observed_ratio = 1)
   fve          = 0.99,
   n_sim        = 5000,
@@ -148,7 +148,7 @@ bands_list <- asym_mean_sup_test(
 )
 
 bands <- data.frame(
-  t     = t_vals,
+  t     = bands_list$bands$grid,
   diff  = tf::tf_evaluate(bands_list$estimate$diff, arg = bands_list$bands$grid)[[1]],
   lower = bands_list$bands$lower,
   upper = bands_list$bands$upper
@@ -156,7 +156,7 @@ bands <- data.frame(
 
 # Algo 5 (neu): Bootstrap-P-Werte – getrennte Aufrufe für L2 und D
 res_boot_L2 <- boot_mean_test(
-  X_obs        = X_obs,
+  X        = X,
   # keine groups → Auto-Gruppierung (observed_ratio = 1)
   n_boot       = B_mc,
   min_frac     = 0.10,
@@ -169,7 +169,7 @@ res_boot_L2 <- boot_mean_test(
 )
 
 res_boot_D <- boot_mean_test(
-  X_obs        = X_obs,
+  X        = X,
   # keine groups → Auto-Gruppierung (observed_ratio = 1)
   n_boot        = B_mc,
   min_frac     = 0.10,
@@ -188,8 +188,8 @@ cat(
 
 # ---------------- Plot: links Kurven (vollständig vs. unvollständig nur für Anzeige),
 # rechts Diff + 95%-Band ----------------
-df_obs <- as.data.frame(X_obs) %>%
-  mutate(id = rownames(X_obs),
+df_obs <- as.data.frame(X) %>%
+  mutate(id = rownames(X),
          gruppe = ifelse(rowSums(is.na(.)) == 0, "vollständig", "unvollständig")) %>%
   pivot_longer(cols = -c(id, gruppe), names_to = "t_idx", values_to = "x") %>%
   mutate(t = grid[as.integer(sub("V", "", t_idx))])
@@ -245,20 +245,20 @@ one_run <- function(b_now) {
   # 1) simulate n Brownian paths on grid
   bm_mat <- t(replicate(n, simulate_bm(grid)))
   # 2) build observation mask under MNAR censoring
-  O_mat  <- t(apply(bm_mat, 1L, make_missing_pattern, a = -1, b = b_now))
-  storage.mode(O_mat) <- "integer"
+  O  <- t(apply(bm_mat, 1L, make_missing_pattern, a = -1, b = b_now))
+  storage.mode(O) <- "integer"
   
   # 3) observed matrix with NAs
-  X_obs <- bm_mat
-  X_obs[O_mat == 0L] <- NA_real_
+  X <- bm_mat
+  X[O == 0L] <- NA_real_
   
   # 4) keine expliziten Gruppen – Auto-Gruppierung (observed_ratio=1)
   p_L2 <- tryCatch(
-    asym_mean_L2_test(X_obs = X_obs, n_sim = 10000)$p.value,
+    asym_mean_L2_test(X = X, n_sim = 10000)$p.value,
     error = function(e) NA_real_
   )
   p_D  <- tryCatch(
-    asym_mean_sup_test(X_obs = X_obs, n_sim = 10000, compute_bands = FALSE)$p.value,
+    asym_mean_sup_test(X = X, n_sim = 10000, compute_bands = FALSE)$p.value,
     error = function(e) NA_real_
   )
   

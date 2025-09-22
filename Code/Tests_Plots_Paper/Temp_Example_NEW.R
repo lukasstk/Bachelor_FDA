@@ -43,11 +43,11 @@ wide <- df %>%
   pivot_wider(names_from = slot, values_from = temp) %>%
   arrange(date)
 
-X_obs <- wide %>% select(all_of(slots48)) %>% as.matrix()
+X <- wide %>% select(all_of(slots48)) %>% as.matrix()
 
 # kurzer Check
-obs_per_day <- rowMeans(!is.na(X_obs))
-cat("Tage gesamt:", nrow(X_obs),
+obs_per_day <- rowMeans(!is.na(X))
+cat("Tage gesamt:", nrow(X),
     " | Median beobachtet/Tag (Anteil):", signif(median(obs_per_day), 3), "\n")
 
 # ===================== 2) tfd-Objekt (irregulär) ===============================
@@ -84,10 +84,10 @@ res_sup <- boot_mean_test(
 )
 
 # ===================== 4) Ergebnisse ===========================================
-n_total <- nrow(X_obs)
+n_total <- nrow(X)
 
 # Einfache Heuristik zur Visualisierung: complete vs incomplete
-group_A <- rowMeans(!is.na(X_obs)) == 1
+group_A <- rowMeans(!is.na(X)) == 1
 n_A <- sum(group_A); n_B <- n_total - n_A
 
 m_band <- length(res_sup$idx)  # Subdomain-Punkte aus den Bootstrap-Bändern
@@ -180,28 +180,28 @@ m_grid <- c(24,26,28,31,33,36,38,40,43,45)
 # Gruppenzugehörigkeit wechseln
 
 # 1) Gruppen EINFRIEREN auf dem vollen Gitter (48 Slots):
-groups_fixed <- rowMeans(!is.na(X_obs)) == 1    
+groups_fixed <- rowMeans(!is.na(X)) == 1    
 
 # 2) Slots nach Gesamtverfügbarkeit sortieren (Paper-Ansatz)
-avail    <- colSums(!is.na(X_obs))
-slot_idx <- seq_len(ncol(X_obs))
+avail    <- colSums(!is.na(X))
+slot_idx <- seq_len(ncol(X))
 
 # 3) p-Werte über m berechnen – mit fixen Gruppen + min_frac = 0
 res_list <- pblapply(m_grid, function(m) {
   # Top-m Slots nach Gesamt-Verfügbarkeit
   idx_top <- order(-avail, slot_idx)[1:m] |> sort()
-  X_sub   <- X_obs[, idx_top, drop = FALSE]
+  X_sub   <- X[, idx_top, drop = FALSE]
   
   # Bootstrap-Tests auf diesem Subgrid
   #  - groups = groups_fixed (fixe Gruppenzugehörigkeit)
   #  - min_frac = 0 (paper-konform, keine zusätzliche 10%-Hürde), opt. hab die Hürde drin gelassen
   rb_L2 <- boot_mean_test(
-    X_obs = X_sub, groups = groups_fixed,
+    X = X_sub, groups = groups_fixed,
     n_boot = B,parallel = TRUE, stat = "L2",
     compute_bands = FALSE)
   
   rb_D <- boot_mean_test(
-    X_obs = X_sub, groups = groups_fixed,
+    X = X_sub, groups = groups_fixed,
     n_boot = B, parallel = TRUE, stat = "D",
     compute_bands = FALSE)
   
