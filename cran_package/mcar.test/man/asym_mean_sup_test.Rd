@@ -6,11 +6,11 @@
 \usage{
 asym_mean_sup_test(
   fd = NULL,
-  X_obs = NULL,
+  X = NULL,
   groups = NULL,
   observed_ratio = 1,
   fve = 0.99,
-  B = 5000,
+  n_sim = 5000,
   min_frac = 0.1,
   seed = NULL,
   alpha = 0.05,
@@ -19,9 +19,9 @@ asym_mean_sup_test(
 )
 }
 \arguments{
-\item{fd}{Optional \code{tfd}/\code{tfd_irreg} (tidyfun). If supplied, takes precedence over \code{X_obs}.}
+\item{fd}{Optional \code{tfd}/\code{tfd_irreg} (tidyfun). If supplied, takes precedence over \code{X}.}
 
-\item{X_obs}{Optional numeric matrix (n x m) with NAs (observations).}
+\item{X}{Optional numeric matrix (n x m) with NAs (observations).}
 
 \item{groups}{Optional 2-level grouping vector of length n (logical/character/factor/numeric).}
 
@@ -29,7 +29,7 @@ asym_mean_sup_test(
 
 \item{fve}{Fraction of variance explained (0-1) to select KL components.}
 
-\item{B}{Number of Monte Carlo draws for the GP approx.}
+\item{n_sim}{Number of Monte Carlo draws for the GP approx.}
 
 \item{min_frac}{Minimum per-time-point coverage per group used to select the subdomain.}
 
@@ -50,14 +50,30 @@ KL-based GP approximation; with \code{compute_bands=TRUE} also returns simultane
 }
 \examples{
 set.seed(1)
-m <- 30; n <- 20
+m <- 50; n <- 40
 grid <- seq(0, 1, length.out = m)
-bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(m-1, sd = sqrt(d)))) }
+bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(length(g)-1, sd = sqrt(d)))) }
 X  <- t(replicate(n, bm(grid)))
-O  <- 1L * (X > -1 & X < 2); X[O == 0L] <- NA_real_
-res <- asym_mean_sup_test(X_obs = X, B = 1000, compute_bands = TRUE, seed = 1)
-# simple visual:
-plot(res$grid, res$diff, type = "l")
-lines(res$grid, res$lower, lty = 2)
-lines(res$grid, res$upper, lty = 2)
+
+# MNAR censoring: observed only if -1 < X(t) < 2
+O <- 1L * (X > -1 & X < 2)
+X[O == 0L] <- NA_real_
+
+# Asymptotic Supremum test with simultaneous bands
+res_sup <- asym_mean_sup_test(
+  X = X,
+  n_sim = 2000,
+  compute_bands = TRUE,
+  seed = 123
+)
+res_sup$p.value
+
+# Quick plot: mean difference + 95\% simultaneous band
+diff_hat <- tf::tf_evaluate(res_sup$estimate$mean_diff, arg = res_sup$bands$grid)[[1]]
+plot(res_sup$bands$grid, diff_hat, type = "l",
+     ylim = range(c(res_sup$bands$lower, res_sup$bands$upper)),
+     xlab = "t", ylab = "mean difference")
+abline(h = 0, lty = 3)
+lines(res_sup$bands$grid, res_sup$bands$lower, lty = 2)
+lines(res_sup$bands$grid, res_sup$bands$upper, lty = 2)
 }

@@ -2,56 +2,69 @@
 % Please edit documentation in R/mcar_tests.R
 \name{asym_mean_L2_test}
 \alias{asym_mean_L2_test}
-\title{Asymptotic L2 test for MCAR}
+\title{Asymptotic L2 test for MCAR (optional pointwise bands)}
 \usage{
 asym_mean_L2_test(
   fd = NULL,
-  X_obs = NULL,
+  X = NULL,
   groups = NULL,
   observed_ratio = 1,
   fve = 0.99,
-  B = 5000,
+  n_sim = 5000,
   min_frac = 0.1,
   seed = NULL,
-  alpha = 0.05
+  alpha = 0.05,
+  compute_bands = TRUE,
+  bands_only = FALSE
 )
 }
 \arguments{
-\item{fd}{Optional \code{tfd}/\code{tfd_irreg} (tidyfun). If supplied, takes precedence over \code{X_obs}.}
+\item{fd}{Optional \code{tfd}/\code{tfd_irreg} (tidyfun). If supplied, takes precedence over \code{X}.}
 
-\item{X_obs}{Optional numeric matrix (n x m) with NAs (observations).}
+\item{X}{Optional numeric matrix (n x m) with NAs (observations).}
 
 \item{groups}{Optional 2-level grouping vector of length n (logical/character/factor/numeric).}
 
 \item{observed_ratio}{Threshold in \[0,1\] used for auto-grouping when \code{groups} is missing.}
 
-\item{fve}{Fraction of variance explained (0-1) to choose \eqn{q}.}
+\item{fve}{Fraction of variance explained (0–1) to choose \eqn{q}.}
 
-\item{B}{Number of Monte Carlo draws for the KL-mixture.}
+\item{n_sim}{Number of Monte Carlo draws for the KL-mixture.}
 
 \item{min_frac}{Minimum per-time-point coverage per group used to select the subdomain.}
 
 \item{seed}{RNG seed.}
 
-\item{alpha}{Significance level (only for rough CI/visualization).}
+\item{alpha}{Significance level (only relevant if \code{compute_bands = TRUE}).}
+
+\item{compute_bands}{Logical: if TRUE, compute rough pointwise confidence bands.}
+
+\item{bands_only}{Logical: if TRUE, return only band information instead of a full \code{htest}.}
 }
 \value{
-\code{htest} with extras (parameters q,m; estimates/CI).
+\code{htest} (with extras) or a light band list.
 }
 \description{
 Tests \eqn{H_0:\ \mu_A=\mu_B} via \eqn{T_{\mu,L2}=n\lVert \hat\mu_A-\hat\mu_B\rVert^2_{L2}}.
 p-values are obtained from a KL-mixture; the number of components is chosen by FVE.
+Optionally, rough pointwise confidence bands for the mean difference can be computed.
 }
 \examples{
-# Brownian toy example (quick)
 set.seed(1)
-m <- 30; n <- 20
+m <- 50; n <- 40
 grid <- seq(0, 1, length.out = m)
-bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(m-1, sd = sqrt(d)))) }
+bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(length(g)-1, sd = sqrt(d)))) }
 X  <- t(replicate(n, bm(grid)))
-# Introduce simple censoring (MNAR): observe only when -1 < X < 2
-O  <- 1L * (X > -1 & X < 2); X[O == 0L] <- NA_real_
-# No groups supplied -> auto-grouping by observed_ratio
-h <- asym_mean_L2_test(X_obs = X, B = 1000, seed = 1)
-h$p.value
+
+# MNAR censoring: observed only if -1 < X(t) < 2
+O <- 1L * (X > -1 & X < 2)
+X[O == 0L] <- NA_real_
+
+# Asymptotic L2 test
+res_L2 <- asym_mean_L2_test(
+  X = X,
+  n_sim = 2000,   
+  seed  = 123
+)
+res_L2$p.value
 }

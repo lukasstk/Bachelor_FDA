@@ -13,11 +13,10 @@
 #' @importFrom doRNG %dorng%
 #' @importFrom foreach foreach
 #' @importFrom doParallel registerDoParallel
-#' @importFrom stats setNames quantile rnorm median sd
+#' @importFrom stats setNames quantile rnorm median sd qnorm
 #' @importFrom utils head tail
 #' @importFrom checkmate assert_matrix assert_numeric assert_atomic_vector assert_class assert_logical assert_number assert_true
 #'
-utils::globalVariables(c("ch"))
 NULL
 
 # ---- Shared params topic ---------------------------
@@ -562,7 +561,7 @@ asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio
 #' res_sup$p.value
 #'
 #' # Quick plot: mean difference + 95% simultaneous band
-#' diff_hat <- tf::tf_evaluate(res_sup$estimate$diff, arg = res_sup$bands$grid)[[1]]
+#' diff_hat <- tf::tf_evaluate(res_sup$estimate$mean_diff, arg = res_sup$bands$grid)[[1]]
 #' plot(res_sup$bands$grid, diff_hat, type = "l",
 #'      ylim = range(c(res_sup$bands$lower, res_sup$bands$upper)),
 #'      xlab = "t", ylab = "mean difference")
@@ -692,7 +691,7 @@ asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_rati
 #'   stat    = "D",       
 #'   alpha   = 0.05,
 #'   compute_bands = TRUE,
-#'   parallel = FALSE,   
+#'   manage_backend = "sequential",
 #'   seed    = 1
 #' )
 #'
@@ -776,6 +775,7 @@ boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 
     
     do_L2 <- "L2" %in% stat; do_D <- "D" %in% stat
     
+    ch <- NULL
     boot_list <- foreach::foreach(ch = idx_chunks, .inorder = FALSE) %dorng% {
       out <- matrix(NA_real_, nrow = length(ch), ncol = sum(c(do_L2, do_D)) + 1L)
       cn  <- c(if (do_L2) "L2", if (do_D) "D", "redraws")

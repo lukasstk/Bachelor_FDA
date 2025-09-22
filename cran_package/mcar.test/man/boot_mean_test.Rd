@@ -6,10 +6,10 @@
 \usage{
 boot_mean_test(
   fd = NULL,
-  X_obs = NULL,
+  X = NULL,
   groups = NULL,
   observed_ratio = 1,
-  B = 5000,
+  n_boot = 5000,
   min_frac = 0.1,
   alpha = 0.05,
   parallel = TRUE,
@@ -19,22 +19,21 @@ boot_mean_test(
   compute_bands = TRUE,
   return_boot = FALSE,
   chunk_size = NULL,
-  manage_backend = c("auto", "force_pool", "sequential"),
+  manage_backend = "auto",
   worker_blas_threads = 1L,
-  bands_only = FALSE,
-  cleanup = FALSE
+  bands_only = FALSE
 )
 }
 \arguments{
-\item{fd}{Optional \code{tfd}/\code{tfd_irreg} (tidyfun). If supplied, takes precedence over \code{X_obs}.}
+\item{fd}{Optional \code{tfd}/\code{tfd_irreg} (tidyfun). If supplied, takes precedence over \code{X}.}
 
-\item{X_obs}{Optional numeric matrix (n x m) with NAs (observations).}
+\item{X}{Optional numeric matrix (n x m) with NAs (observations).}
 
 \item{groups}{Optional 2-level grouping vector of length n (logical/character/factor/numeric).}
 
 \item{observed_ratio}{Threshold in \[0,1\] used for auto-grouping when \code{groups} is missing.}
 
-\item{B}{Number of bootstrap iterations.}
+\item{n_boot}{Number of bootstrap iterations.}
 
 \item{min_frac}{Minimum per-time-point coverage per group used to select the subdomain.}
 
@@ -46,9 +45,9 @@ boot_mean_test(
 
 \item{seed}{RNG seed (passed to doRNG).}
 
-\item{stat}{\code{"L2"} or \code{"D"} (supremum).}
+\item{stat}{\code{"L2"}, \code{"D"} oder \code{c("L2","D")}.}
 
-\item{compute_bands}{Compute simultaneous bands?}
+\item{compute_bands}{Compute confidence bands?}
 
 \item{return_boot}{Attach bootstrap statistics?}
 
@@ -59,24 +58,44 @@ boot_mean_test(
 \item{worker_blas_threads}{BLAS/OpenMP threads per worker (internal pool only).}
 
 \item{bands_only}{Return only the band payload?}
-
-\item{cleanup}{Logical: if TRUE, detach foreach/doRNG and stop the internal pool on exit.}
 }
 \value{
-\code{htest} (with extras) or a light band list.
+\code{htest} (with extras) or a list of both tests.
 }
 \description{
-Returns bootstrap p-values for L2 or Supremum and, optionally, simultaneous
-confidence bands for the difference curve. Parallelization via foreach/doParallel
+Returns bootstrap p-values for L2 or Supremum and, optionally, confidence
+bands for the difference curve. Parallelization via foreach/doParallel
 with reproducible seeding via doRNG.
 }
 \examples{
 set.seed(1)
-m <- 20; n <- 20
+m <- 30; n <- 200
 grid <- seq(0, 1, length.out = m)
-bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(m-1, sd = sqrt(d)))) }
-X  <- t(replicate(n, bm(grid)))
-O  <- 1L * (X > -1 & X < 2); X[O == 0L] <- NA_real_
-h <- boot_mean_test(X_obs = X, stat = "D", B = 100, parallel = FALSE, seed = 1)
-h$p.value
+bm <- function(g){ d <- diff(g)[1]; c(0, cumsum(rnorm(length(g)-1, sd = sqrt(d)))) }
+
+# Group A: standard BM; Group B: BM with mean shift
+X_A <- t(replicate(n/2, bm(grid)))
+X_B <- t(replicate(n/2, bm(grid))) + 0.3
+X <- rbind(X_A, X_B)
+
+# Define groups: FALSE = A, TRUE = B
+groups <- c(rep(FALSE, n/2), rep(TRUE, n/2))
+
+# MNAR censoring: observed only if -1 < X(t) < 2
+O <- 1L * (X > -1 & X < 2)
+X <- X; X[O == 0L] <- NA_real_
+
+# Bootstrap Supremum test
+res_boot <- boot_mean_test(
+  X   = X,
+  groups  = groups,
+  n_boot  = 2000,   
+  stat    = "D",       
+  alpha   = 0.05,
+  compute_bands = TRUE,
+  manage_backend = "sequential",
+  seed    = 1
+)
+
+res_boot$p.value 
 }

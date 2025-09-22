@@ -4,9 +4,9 @@
 \alias{mcar_common-params}
 \title{Common arguments for MCAR mean tests}
 \arguments{
-\item{fd}{Optional \code{tfd}/\code{tfd_irreg} (tidyfun). If supplied, takes precedence over \code{X_obs}.}
+\item{fd}{Optional \code{tfd}/\code{tfd_irreg} (tidyfun). If supplied, takes precedence over \code{X}.}
 
-\item{X_obs}{Optional numeric matrix (n x m) with NAs (observations).}
+\item{X}{Optional numeric matrix (n x m) with NAs (observations).}
 
 \item{groups}{Optional 2-level grouping vector of length n (logical/character/factor/numeric).}
 
