@@ -284,12 +284,11 @@ NULL
     stop(sprintf("Weighted covariance is not PSD (min eigenvalue = %.4g).", min(ev_test)), call. = FALSE)
   }
   ev  <- eigen(S, symmetric = TRUE)
-  lam <- ev$values
-  U   <- ev$vectors
-  phi   <- sweep(U, 1, sw, "/")
-  norms <- sqrt(colSums(phi^2 * w))
-  phi   <- sweep(phi, 2, norms, "/")
-  list(lam = lam, phi = phi, w = w)
+  eigenvalues <- ev$values
+  eigenfunctions   <- sweep(ev$vectors, 1, sw, "/")
+  norms <- sqrt(colSums(eigenfunctions^2 * w))
+  eigenfunctions   <- sweep(eigenfunctions, 2, norms, "/")
+  list(eigenvalues = eigenvalues, eigenfunctions = eigenfunctions, w = w)
 }
 
 #' Functional confidence bands
@@ -485,7 +484,7 @@ asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio
   
   cov_matrix  <- .covariance_estimator(X_sub, O_sub, group_A, mean_A, mean_B, est$pA, est$pB)
   KL_decomp <- .kl_decomposition(cov_matrix, subgrid)
-  eigenvalues <- KL_decomp$lam
+  eigenvalues <- KL_decomp$eigenvalues
   
   if (!is.null(seed)) set.seed(seed)
   cum_var <- cumsum(eigenvalues) / sum(eigenvalues)
@@ -599,8 +598,8 @@ asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_rati
   
   cov_matrix  <- .covariance_estimator(X_sub, O_sub, group_A, mean_A, mean_B, est$pA, est$pB)
   KL_decomp <- .kl_decomposition(cov_matrix, subgrid)
-  eigenvalues <- KL_decomp$lam
-  eigenfunctions <- KL_decomp$phi
+  eigenvalues <- KL_decomp$eigenvalues
+  eigenfunctions <- KL_decomp$eigenfunctions
   
   if (!is.null(seed)) set.seed(seed)
   cum_var <- cumsum(eigenvalues) / sum(eigenvalues)
