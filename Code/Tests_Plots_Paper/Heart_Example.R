@@ -80,7 +80,7 @@ p_left <- ggplot(plot_df, aes(x = ti, y = y0, group = id, colour = group)) +
 # ===================== 5) Plot: Mean-Diff + Bänder (rechts) ===================
 df_band <- data.frame(
   ti    = res_sup$bands$grid,
-  diff  = tf::tf_evaluate(res_sup$estimate$diff)[[1]], 
+  diff  = tf::tf_evaluate(res_sup$estimate$mean_diff)[[1]], 
   lower = res_sup$bands$lower,
   upper = res_sup$bands$upper
 ) %>%

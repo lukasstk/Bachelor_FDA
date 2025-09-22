@@ -246,12 +246,13 @@ NULL
 #' @noRd
 .group_mean_estimators <- function(X, O, group_A) {
   n  <- nrow(X)
-  IA <- as.numeric(group_A); IB <- 1 - IA
+  IA <- as.numeric(group_A)
+  IB <- 1 - IA
   pA_hat <- colSums(O * IA) / n
   pB_hat <- colSums(O * IB) / n
-  muA_hat <- colSums(X * IA, na.rm = TRUE) / (n * pA_hat)
-  muB_hat <- colSums(X * IB, na.rm = TRUE) / (n * pB_hat)
-  list(muA = muA_hat, muB = muB_hat, pA = pA_hat, pB = pB_hat)
+  mean_A_hat <- colSums(X * IA, na.rm = TRUE) / (n * pA_hat)
+  mean_B_hat <- colSums(X * IB, na.rm = TRUE) / (n * pB_hat)
+  list(mean_A = mean_A_hat, mean_B = mean_B_hat, pA = pA_hat, pB = pB_hat)
 }
 
 #' Corrected covariance under partial observation
@@ -473,32 +474,33 @@ asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio
   O_sub <- O[, idx, drop = FALSE]
   
   est <- .group_mean_estimators(X_sub, O_sub, group_A)
-  muA <- est$muA
-  muB <- est$muB
-  diff <- muA - muB
+  mean_A <- est$mean_A
+  mean_B <- est$mean_B
+  mean_diff <- mean_A - mean_B
   
-  muA_tfd  <- tf::tfd(matrix(muA,  nrow = 1), arg = subgrid)
-  muB_tfd  <- tf::tfd(matrix(muB,  nrow = 1), arg = subgrid)
-  diff_tfd <- tf::tfd(matrix(diff, nrow = 1), arg = subgrid)
+  mean_A_tfd  <- tf::tfd(matrix(mean_A,  nrow = 1), arg = subgrid)
+  mean_B_tfd  <- tf::tfd(matrix(mean_B,  nrow = 1), arg = subgrid)
+  mean_diff_tfd <- tf::tfd(matrix(mean_diff, nrow = 1), arg = subgrid)
   
-  T_L2 <- n * tf::tf_integrate(diff_tfd^2, arg = subgrid)
+  T_L2 <- n * tf::tf_integrate(mean_diff_tfd^2, arg = subgrid)
   
-  K  <- .covariance_estimator(X_sub, O_sub, group_A, muA, muB, est$pA, est$pB)
-  KL <- .kl_decomposition(K, subgrid); lam <- KL$lam
+  cov_matrix  <- .covariance_estimator(X_sub, O_sub, group_A, mean_A, mean_B, est$pA, est$pB)
+  KL_decomp <- .kl_decomposition(cov_matrix, subgrid)
+  eigenvalues <- KL_decomp$lam
   
   if (!is.null(seed)) set.seed(seed)
-  cum <- cumsum(lam) / sum(lam)
-  q <- which(cum >= fve)[1]
+  cum_var <- cumsum(eigenvalues) / sum(eigenvalues)
+  q <- which(cum_var >= fve)[1]
   q <- max(1L, q)
-  lam_q <- lam[seq_len(q)]
+  eigenvalues_fve <- eigenvalues[seq_len(q)]
   
   Z <- matrix(rnorm(q * n_sim), nrow = q)
-  W <- colSums((Z^2) * lam_q)
+  sim_stats <- colSums((Z^2) * eigenvalues_fve)
   
-  p <- (sum(W >= T_L2) + 1) / (length(W) + 1)
+  p_value <- (sum(sim_stats >= T_L2) + 1) / (length(sim_stats) + 1)
   
   if (isTRUE(compute_bands)) {
-    bands <- .confidence_bands("L2", diff, W, n, alpha, subgrid, method = "asymptotic")
+    bands <- .confidence_bands("L2", mean_diff, sim_stats, n, alpha, subgrid, method = "asymptotic")
   } else {
     bands <- list(lower = NULL, upper = NULL, band = NULL)
   }
@@ -507,20 +509,20 @@ asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio
   
   if (isTRUE(bands_only)) {
     return(list(
-      estimate = list(muA = muA_tfd,
-                      muB = muB_tfd,
-                      diff = diff_tfd),
+      estimate = list(mean_A = mean_A_tfd,
+                      mean_B = mean_B_tfd,
+                      mean_diff = mean_diff_tfd),
       parameter = c(q = q, n_sim = n_sim),
       bands = bands
     ))
   }
   
-  output <- .create_output("T_{mu,L2}", T_L2, p,
+  output <- .create_output(paste0("T_\u03bc,L\u00B2"), T_L2, p_value,
                            "L2 test",
                            data_name,
-                           estimate = list(muA  = muA_tfd,
-                                           muB  = muB_tfd,
-                                           diff = diff_tfd),
+                           estimate = list(mean_A  = mean_A_tfd,
+                                           mean_B  = mean_B_tfd,
+                                           mean_diff = mean_diff_tfd),
                            parameter = c(q = q, n_sim = n_sim),
                       bands = bands)
   output
@@ -586,37 +588,37 @@ asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_rati
   O_sub <- O[, idx, drop = FALSE]
   
   est <- .group_mean_estimators(X_sub, O_sub, group_A)
-  muA <- est$muA
-  muB <- est$muB
-  diff <- muA - muB
+  mean_A <- est$mean_A
+  mean_B <- est$mean_B
+  mean_diff <- mean_A - mean_B
   
-  muA_tfd  <- tf::tfd(matrix(muA,  nrow = 1), arg = subgrid)
-  muB_tfd  <- tf::tfd(matrix(muB,  nrow = 1), arg = subgrid)
-  diff_tfd <- tf::tfd(matrix(diff, nrow = 1), arg = subgrid)
+  mean_A_tfd  <- tf::tfd(matrix(mean_A,  nrow = 1), arg = subgrid)
+  mean_B_tfd  <- tf::tfd(matrix(mean_B,  nrow = 1), arg = subgrid)
+  mean_diff_tfd <- tf::tfd(matrix(mean_diff, nrow = 1), arg = subgrid)
   
-  T_D <- sqrt(n) * max(abs(diff))
+  T_D <- sqrt(n) * max(abs(mean_diff))
   
-  K  <- .covariance_estimator(X_sub, O_sub, group_A, muA, muB, est$pA, est$pB)
-  KL <- .kl_decomposition(K, subgrid)
-  lam <- KL$lam
-  phi <- KL$phi
+  cov_matrix  <- .covariance_estimator(X_sub, O_sub, group_A, mean_A, mean_B, est$pA, est$pB)
+  KL_decomp <- .kl_decomposition(cov_matrix, subgrid)
+  eigenvalues <- KL_decomp$lam
+  eigenfunctions <- KL_decomp$phi
   
   if (!is.null(seed)) set.seed(seed)
-  cum <- cumsum(lam) / sum(lam)
-  q <- which(cum >= fve)[1]
+  cum_var <- cumsum(eigenvalues) / sum(eigenvalues)
+  q <- which(cum_var >= fve)[1]
   q <- max(1L, q)
-  lam_q <- lam[seq_len(q)]
-  phi_q <- phi[, seq_len(q), drop = FALSE]
-  A <- sweep(phi_q, 2, sqrt(lam_q), "*")  
+  eigenvalues_fve <- eigenvalues[seq_len(q)]
+  eigenfunctions_fve <- eigenfunctions[, seq_len(q), drop = FALSE]
+  A <- sweep(eigenfunctions_fve, 2, sqrt(eigenvalues_fve), "*")  
   
   Z <- matrix(rnorm(q * n_sim), nrow = q)     
   gp_vals <- A %*% Z                      
-  W <- apply(abs(gp_vals), 2, max)
+  sim_stats <- apply(abs(gp_vals), 2, max)
   
-  p <- (sum(W >= T_D) + 1) / (length(W) + 1)
+  p_value <- (sum(sim_stats >= T_D) + 1) / (length(sim_stats) + 1)
   
   if (isTRUE(compute_bands)) {
-    bands <- .confidence_bands("D", diff, W, n, alpha, subgrid)
+    bands <- .confidence_bands("D", mean_diff, sim_stats, n, alpha, subgrid)
   } else {
     bands <- list(lower = NULL, upper = NULL, band = NULL)
   }
@@ -625,20 +627,20 @@ asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_rati
   
   if (isTRUE(bands_only)) {
     return(list(
-      estimate = list(muA = muA_tfd,
-                      muB = muB_tfd,
-                      diff = diff_tfd),
+      estimate = list(mean_A = mean_A_tfd,
+                      mean_B = mean_B_tfd,
+                      mean_diff = mean_diff_tfd),
       parameter = c(q = q, n_sim = n_sim),
       bands    = bands
     ))
   }
   
-  output <- .create_output("T_{mu,D}", T_D, p,
+  output <- .create_output(paste0("T_\u03bc,D"), T_D, p_value,
                            "Supremum test",
                            data_name,
-                           estimate = list(muA  = muA_tfd,
-                                           muB  = muB_tfd,
-                                           diff = diff_tfd),
+                           estimate = list(mean_A  = mean_A_tfd,
+                                           mean_B  = mean_B_tfd,
+                                           mean_diff = mean_diff_tfd),
                            parameter = c(q = q, n_sim=n_sim),
                            bands = bands)
   output
@@ -731,25 +733,26 @@ boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 
   O_sub   <- O[, idx, drop = FALSE]
   
   est  <- .group_mean_estimators(X_sub, O_sub, group_A)
-  muA  <- est$muA
-  muB <- est$muB
-  diff <- muA - muB
+  mean_A  <- est$mean_A
+  mean_B <- est$mean_B
+  mean_diff <- mean_A - mean_B
   
-  muA_tfd  <- tf::tfd(matrix(muA, 1), arg = subgrid)
-  muB_tfd  <- tf::tfd(matrix(muB, 1), arg = subgrid)
-  diff_tfd <- tf::tfd(matrix(diff, 1), arg = subgrid)
+  mean_A_tfd  <- tf::tfd(matrix(mean_A, 1), arg = subgrid)
+  mean_B_tfd  <- tf::tfd(matrix(mean_B, 1), arg = subgrid)
+  mean_diff_tfd <- tf::tfd(matrix(mean_diff, 1), arg = subgrid)
   
   w <- .trapezoid_weights(subgrid)
   
   # --- Teststatistiken ---
-  T_L2 <- if ("L2" %in% stat) n * sum((diff^2) * w) else NULL
-  T_D  <- if ("D"  %in% stat) sqrt(n) * max(abs(diff)) else NULL
+  T_L2 <- if ("L2" %in% stat) n * sum((mean_diff^2) * w) else NULL
+  T_D  <- if ("D"  %in% stat) sqrt(n) * max(abs(mean_diff)) else NULL
   
   # --- Daten zentrieren ---
-  IA <- as.numeric(group_A); IB <- 1 - IA
+  IA <- as.numeric(group_A)
+  IB <- 1 - IA
   X_cent <- X_sub
-  if (any(IA == 1)) X_cent[IA == 1, ] <- sweep(X_sub[IA == 1,,drop=FALSE], 2, muA, `-`)
-  if (any(IB == 1)) X_cent[IB == 1, ] <- sweep(X_sub[IB == 1,,drop=FALSE], 2, muB, `-`)
+  if (any(IA == 1)) X_cent[IA == 1, ] <- sweep(X_sub[IA == 1,,drop=FALSE], 2, mean_A, `-`)
+  if (any(IB == 1)) X_cent[IB == 1, ] <- sweep(X_sub[IB == 1,,drop=FALSE], 2, mean_B, `-`)
   
   if (!is.null(seed)) set.seed(seed)
   
@@ -832,30 +835,30 @@ boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 
       boot_vals <- boot_mat[, "L2"]
       boot_vals <- boot_vals[!is.na(boot_vals)]
       T_val <- T_L2
-      bands <- if (compute_bands) .confidence_bands("L2", diff, boot_diffs, n, alpha, subgrid, "bootstrap") else NULL
+      bands <- if (compute_bands) .confidence_bands("L2", mean_diff, boot_diffs, n, alpha, subgrid, "bootstrap") else NULL
       method <- "Bootstrap mean test (L2)"
-      stat_name <- "T_{mu,L2}"
+      stat_name <- paste0("T_\u03bc,L\u00B2")
     }
     if (s == "D") {
       boot_vals <- boot_mat[, "D"]
       boot_vals <- boot_vals[!is.na(boot_vals)]
       T_val <- T_D
-      bands <- if (compute_bands) .confidence_bands("D", diff, boot_vals, n, alpha, subgrid, "bootstrap") else NULL
+      bands <- if (compute_bands) .confidence_bands("D", mean_diff, boot_vals, n, alpha, subgrid, "bootstrap") else NULL
       method <- "Bootstrap mean test (supremum)"
-      stat_name <- "T_{mu,D}"
+      stat_name <- paste0("T_\u03bc,L2")
     }
     
-    p_val <- (sum(boot_vals >= T_val) + 1) / (length(boot_vals) + 1)
+    p_value <- (sum(boot_vals >= T_val) + 1) / (length(boot_vals) + 1)
     
     outputs[[s]] <- .create_output(
       stat_name   = stat_name,
       stat_value  = T_val,
-      p_value     = p_val,
+      p_value     = p_value,
       method      = method,
       data_name   = if (!is.null(fd)) "fd" else "X",
-      estimate    = list(muA=muA_tfd, 
-                         muB=muB_tfd, 
-                         diff=diff_tfd),
+      estimate    = list(mean_A=mean_A_tfd, 
+                         mean_B=mean_B_tfd, 
+                         mean_diff=mean_diff_tfd),
       parameter   = c(n_boot=n_boot),
       bands       = bands
     )

@@ -83,7 +83,7 @@ p_left <- ggplot(df_long, aes(x = demand, y = logprice, group = id, colour = gro
   theme(legend.position = "none")  # auf Wunsch: "bottom"
 
 # (b) Rechts: Mean-Diff + simultane Bänder
-df_band <- tidyfun::tf_unnest(res_sup$estimate$diff) %>%
+df_band <- tidyfun::tf_unnest(res_sup$estimate$mean_diff) %>%
   dplyr::select(demand = arg, diff = value) %>%
   dplyr::mutate(
     lower = res_sup$bands$lower,

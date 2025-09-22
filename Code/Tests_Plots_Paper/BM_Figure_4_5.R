@@ -149,7 +149,7 @@ bands_list <- asym_mean_sup_test(
 
 bands <- data.frame(
   t     = bands_list$bands$grid,
-  diff  = tf::tf_evaluate(bands_list$estimate$diff, arg = bands_list$bands$grid)[[1]],
+  diff  = tf::tf_evaluate(bands_list$estimate$mean_diff, arg = bands_list$bands$grid)[[1]],
   lower = bands_list$bands$lower,
   upper = bands_list$bands$upper
 )

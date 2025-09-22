@@ -134,7 +134,7 @@ idx_sorted <- idx_out[o]
 block      <- c(0, cumsum(diff(idx_sorted) > 1))
 
 # Extrahiere Differenz und Bänder
-diff_vec  <- as.numeric(as.matrix(res_sup$estimate$diff))[o]
+diff_vec  <- as.numeric(as.matrix(res_sup$estimate$mean_diff))[o]
 lower_vec <- as.numeric(res_sup$bands$lower[o])
 upper_vec <- as.numeric(res_sup$bands$upper[o])
 
