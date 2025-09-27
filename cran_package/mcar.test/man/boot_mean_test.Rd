@@ -2,7 +2,7 @@
 % Please edit documentation in R/mcar_tests.R
 \name{boot_mean_test}
 \alias{boot_mean_test}
-\title{Bootstrap mean test (L2/Supremum) with optional bands}
+\title{Bootstrap mean test (L2/Supremum)}
 \usage{
 boot_mean_test(
   fd = NULL,
@@ -12,7 +12,6 @@ boot_mean_test(
   n_boot = 5000,
   min_frac = 0.1,
   alpha = 0.05,
-  parallel = TRUE,
   ncpus = parallel::detectCores(logical = TRUE),
   seed = NULL,
   stat = c("L2", "D"),
@@ -37,9 +36,7 @@ boot_mean_test(
 
 \item{min_frac}{Minimum per-time-point coverage per group used to select the subdomain.}
 
-\item{alpha}{Significance level for bands.}
-
-\item{parallel}{Logical: run in parallel?}
+\item{alpha}{Significance level for bands (Supremum only).}
 
 \item{ncpus}{Number of workers for an internal cluster (if created).}
 
@@ -47,7 +44,7 @@ boot_mean_test(
 
 \item{stat}{\code{"L2"}, \code{"D"} oder \code{c("L2","D")}.}
 
-\item{compute_bands}{Compute confidence bands?}
+\item{compute_bands}{Compute confidence bands (Supremum only)?}
 
 \item{return_boot}{Attach bootstrap statistics?}
 
@@ -57,15 +54,13 @@ boot_mean_test(
 
 \item{worker_blas_threads}{BLAS/OpenMP threads per worker (internal pool only).}
 
-\item{bands_only}{Return only the band payload?}
+\item{bands_only}{Logical: if TRUE, return only band information instead of a full \code{htest}.}
 }
 \value{
 \code{htest} (with extras) or a list of both tests.
 }
 \description{
-Returns bootstrap p-values for L2 or Supremum and, optionally, confidence
-bands for the difference curve. Parallelization via foreach/doParallel
-with reproducible seeding via doRNG.
+Returns bootstrap p-values for L2 or Supremum.
 }
 \examples{
 set.seed(1)
