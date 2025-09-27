@@ -109,16 +109,6 @@ df_long_plot <- wide %>%
   tidyr::pivot_longer(cols = all_of(slots48), names_to = "slot", values_to = "temp") %>%
   mutate(slot = factor(slot, levels = slots48))
 
-p_groups <- ggplot(df_long_plot, aes(x = slot, y = temp, group = date, colour = group)) +
-  geom_line(linewidth = 0.7, alpha = 0.9, na.rm = TRUE) +
-  scale_colour_manual(values = c("Complete" = "grey60", "Incomplete" = "red")) +
-  scale_x_discrete(breaks = slots48[tick_idx], labels = slots48[tick_idx], drop = FALSE) +
-  labs(title = "Tageskurven (temp_east) – Complete (grau) vs Incomplete (rot)",
-       x = "Uhrzeit", y = "Temperatur (°C)", colour = "Gruppe") +
-  theme_minimal() +
-  theme(legend.position = "bottom",
-        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
-
 # ---------- Rechte Seite: Diff + Bootstrap-Bänder MIT LÜCKE --------------------
 grid_sub  <- res_sup$bands$grid
 grid_full <- slot_to_hours(slots48)
@@ -145,27 +135,73 @@ df_cb <- data.frame(
   block = block
 )
 
-p_left  <- p_groups
-p_right <- ggplot(df_cb, aes(x = time)) +
-  geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey35") +
-  geom_line(aes(y = lower, group = block), linetype = "dashed") +
-  geom_line(aes(y = upper, group = block), linetype = "dashed") +
-  geom_line(aes(y = diff,  group = block), linewidth = 1) +
+# ===================== Final Plot: Figure_6_temp_data ===========================
+
+# Links (Tageskurven, grau vs schwarz)
+p_left <- ggplot(df_long_plot, aes(x = slot, y = temp, group = date)) +
+  geom_line(
+    data = subset(df_long_plot, group == "Complete"),
+    color = "grey70", linewidth = 0.6, alpha = 0.9, na.rm = TRUE
+  ) +
+  geom_line(
+    data = subset(df_long_plot, group == "Incomplete"),
+    color = "black", linewidth = 0.7, alpha = 0.9, na.rm = TRUE
+  ) +
   scale_x_discrete(
-    breaks = slots48[tick_idx],
-    labels = slots48[tick_idx],
+    breaks = c("00:00", "06:00", "12:00", "18:00", "23:30"),
+    labels = c("00:00", "06:00", "12:00", "18:00", "24:00"),
     drop   = FALSE
   ) +
-  scale_y_continuous(
-    limits = c(-10, 10),
-    breaks = seq(-10, 10, by = 2)
-  ) +
-  labs(x = "time", y = "difference in means") +
-  theme_classic(base_size = 14) +
-  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5))
+  labs(x = "time", y = expression("temperature ("*degree*C*")")) +
+  theme_minimal(base_size = 18, base_family = "Times New Roman") +
+  theme(
+    legend.position   = "none",
+    text              = element_text(family = "Times New Roman"),
+    axis.title        = element_text(size = 20),
+    axis.text         = element_text(size = 16),
+    axis.line         = element_line(color = "black", linewidth = 0.5),
+    axis.ticks        = element_line(color = "black", linewidth = 0.5),
+    axis.ticks.length = unit(3, "pt")
+  )
 
-# Doppel-Plot anzeigen
-p_left + p_right
+# Rechts (Differenzen + Bootstrap-Bänder, schwarz/grau)
+p_right <- ggplot(df_cb, aes(x = time)) +
+  geom_hline(yintercept = 0, linewidth = 0.3, color = "grey35") +
+  geom_ribbon(aes(ymin = lower, ymax = upper, group = block),
+              alpha = 0.15, fill = "grey50") +
+  geom_line(aes(y = diff, group = block), linewidth = 1, color = "black") +
+  geom_line(aes(y = lower, group = block), linetype = 2, color = "black") +
+  geom_line(aes(y = upper, group = block), linetype = 2, color = "black") +
+  scale_x_discrete(
+    breaks = c("00:00", "06:00", "12:00", "18:00", "23:30"),
+    labels = c("00:00", "06:00", "12:00", "18:00", "24:00"),
+    drop   = FALSE
+  ) +
+  coord_cartesian(ylim = c(-10, 10)) +
+  labs(x = "time", y = expression("Difference in means ("*degree*C*")")) +
+  theme_minimal(base_size = 18, base_family = "Times New Roman") +
+  theme(
+    text              = element_text(family = "Times New Roman"),
+    axis.title        = element_text(size = 18),
+    axis.text         = element_text(size = 16),
+    axis.line         = element_line(color = "black", linewidth = 0.5),
+    axis.ticks        = element_line(color = "black", linewidth = 0.5),
+    axis.ticks.length = unit(3, "pt")
+  )
+
+# Kombination
+Figure_6_temp_data <- p_left + plot_spacer() + p_right +
+  plot_layout(widths = c(1, 0.1, 1))
+
+# Abspeichern
+ggsave(
+  filename = "Plots/Figure_6_temp_data.png",
+  plot     = Figure_6_temp_data,
+  width    = 10,
+  height   = 4,
+  dpi      = 300
+)
+
 
 # ==== Figure-7-Style (Bootstrap-p-Werte über m) – FIX: Gruppen manuell/fix ====
 
@@ -220,20 +256,55 @@ df_table <- df_p |>
 
 print(df_table, n = Inf)
 
-# 5) Plot im Figure-7-Stil
-p_fig7 <- ggplot(df_p, aes(x = m, y = p, shape = test)) +
-  geom_point(size = 3) +
+# Figure 7 im Figure-4-Stil
+Figure_7 <- ggplot(df_p, aes(x = m, y = p, shape = test, color = test)) +
+  geom_point(size = 5, stroke = 1.5, shape = 4) +
   geom_hline(yintercept = 0.05, linetype = "dashed") +
-  scale_shape_manual(
-    values = c(p_L2 = 1, p_D = 2),
-    labels = c(p_L2 = expression(T[mu*","*L^2]),
-               p_D  = expression(T[mu*","*D]))
+  scale_color_manual(
+    values = c("p_L2" = "steelblue",
+               "p_D"  = "red"),
+    breaks = c("p_L2", "p_D"),
+    labels = c(
+      "p_L2" = expression(T[mu]*","~L^2),
+      "p_D"  = expression(T[mu]*","~D)
+    )
   ) +
-  scale_x_continuous(limits = c(min(m_grid)-1, max(m_grid)+1),
-                     breaks = seq(25,45, by = 5),
-                     expand = expansion(mult = c(0, 0))) +
+  scale_x_continuous(
+    limits = c(min(m_grid)-1, max(m_grid)+1),
+    breaks = seq(25, 45, by = 5),
+    expand = expansion(mult = c(0, 0))
+  ) +
   coord_cartesian(ylim = c(0, 0.5)) +
-  labs(x = "number of grid points in I", y = "p-values", shape = NULL) +
-  theme_classic(base_size = 14)
+  labs(x = "number of grid points in I", y = "p-values",
+       shape = NULL, color = NULL) +
+  theme_classic(base_size = 18, base_family = "Times New Roman") +
+  theme(
+    legend.position = "inside",
+    legend.position.inside = c(0.91, 0.3),
+    legend.margin = margin(7, 7, 7, 7),
+    text = element_text(family = "Times New Roman"),
+    axis.title = element_text(size = 18),
+    axis.text  = element_text(size = 16),
+    legend.background = element_rect(fill = "white", colour = "black"),
+    legend.key.size = unit(1, "lines"),             
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid.major = element_line(colour = "grey80", size = 0.5),
+    panel.grid.minor = element_blank()
+  ) +
+  guides(
+    shape = guide_legend(override.aes = list(size = 4))
+  )
 
-print(p_fig7)
+print(Figure_7)
+
+# Speichern
+ggsave(
+  filename = "Plots/Figure_7.png",
+  plot     = Figure_7,
+  width    = 10,
+  height   = 5,
+  dpi      = 300
+)
+

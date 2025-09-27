@@ -68,21 +68,6 @@ df_long <- tidyr::pivot_longer(
   names_to = "demand", values_to = "logprice"
 ) |> dplyr::mutate(demand = as.numeric(demand))
 
-p_left <- ggplot(df_long, aes(x = demand, y = logprice, group = id, colour = group)) +
-  geom_line(linewidth = 0.4, alpha = 0.85, na.rm = TRUE) +
-  scale_colour_manual(
-    values = setNames(c("grey70", "black"), c(lab_A, lab_B)),
-    breaks = c(lab_A, lab_B),
-    labels = c(lab_A, lab_B)
-  ) +
-  scale_x_continuous(limits = c(1700, 2500),
-                     breaks = c(1800, 2000, 2200, 2400),
-                     expand = c(0,0)) +
-  labs(x = "demand (MW)", y = "log price", colour = NULL) +
-  theme_classic(base_size = 14) +
-  theme(legend.position = "none")  # auf Wunsch: "bottom"
-
-# (b) Rechts: Mean-Diff + simultane Bänder
 df_band <- tidyfun::tf_unnest(res_sup$estimate$mean_diff) %>%
   dplyr::select(demand = arg, diff = value) %>%
   dplyr::mutate(
@@ -92,15 +77,66 @@ df_band <- tidyfun::tf_unnest(res_sup$estimate$mean_diff) %>%
   tidyr::drop_na() %>%
   dplyr::arrange(demand)
 
+# Links
+p_left <- ggplot(df_long, aes(x = demand, y = logprice, group = id)) +
+  geom_line(
+    data = subset(df_long, group == lab_A),
+    color = "grey70", linewidth = 0.6, na.rm = TRUE
+  ) +
+  geom_line(
+    data = subset(df_long, group == lab_B),
+    color = "black", linewidth = 0.7, na.rm = TRUE
+  ) +
+  scale_x_continuous(
+    limits  = c(1700, 2500),
+    breaks  = c(1800, 2000, 2200, 2400),
+    expand  = c(0,0)
+  ) +
+  labs(x = "demand (MW)", y = "log price") +
+  theme_minimal(base_size = 18, base_family = "Times New Roman") +
+  theme(
+    legend.position   = "none",
+    text              = element_text(family = "Times New Roman"),
+    axis.title        = element_text(size = 20),
+    axis.text         = element_text(size = 16),
+    axis.line         = element_line(color = "black", linewidth = 0.5),
+    axis.ticks        = element_line(color = "black", linewidth = 0.5),
+    axis.ticks.length = unit(3, "pt")
+  )
+
+# Rechts
 p_right <- ggplot(df_band, aes(x = demand)) +
-  geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey30") +
-  geom_line(aes(y = lower), linetype = "dashed", na.rm = TRUE) +
-  geom_line(aes(y = upper), linetype = "dashed", na.rm = TRUE) +
-  geom_line(aes(y = diff),  linewidth = 0.9, na.rm = TRUE) +
-  scale_x_continuous(breaks = c(1800, 2000, 2200, 2400), expand = c(0,0)) +
+  geom_hline(yintercept = 0, linewidth = 0.3, color = "grey35") +
+  geom_ribbon(aes(ymin = lower, ymax = upper),
+              alpha = 0.15, fill = "grey50") +
+  geom_line(aes(y = diff), linewidth = 1, color = "black") +
+  geom_line(aes(y = lower), linetype = 2, color = "black") +
+  geom_line(aes(y = upper), linetype = 2, color = "black") +
+  scale_x_continuous(
+    breaks = c(1800, 2000, 2200, 2400),
+    expand = c(0,0)
+  ) +
   coord_cartesian(xlim = c(1700, 2500), ylim = c(-4, 4)) +
   labs(x = "demand (MW)", y = "difference in means") +
-  theme_classic(base_size = 14)
+  theme_minimal(base_size = 18, base_family = "Times New Roman") +
+  theme(
+    text              = element_text(family = "Times New Roman"),
+    axis.title        = element_text(size = 18),
+    axis.text         = element_text(size = 16),
+    axis.line         = element_line(color = "black", linewidth = 0.5),
+    axis.ticks        = element_line(color = "black", linewidth = 0.5),
+    axis.ticks.length = unit(3, "pt")
+  )
 
-# Anzeigen
-p_left + p_right
+# Kombi
+Figure_6_elec_data <- p_left + plot_spacer() + p_right +
+  plot_layout(widths = c(1, 0.1, 1))
+
+# Abspeichern
+ggsave(
+  filename = "Plots/Figure_6_elec_data.png",
+  plot     = Figure_6_elec_data,
+  width    = 10,
+  height   = 4,
+  dpi      = 300
+)

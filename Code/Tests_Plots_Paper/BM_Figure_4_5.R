@@ -115,8 +115,7 @@ res_L2 <- asym_mean_L2_test(
   fve     = 0.99,
   n_sim   = 5000,       # MC für KL-Mischung (p-Wert)
   min_frac= 0.10,
-  seed    = 42,
-  alpha   = alpha
+  seed    = 42
 )
 cat("Algo1 L2  -> stat:", unname(res_L2$statistic), " p:", res_L2$p.value, "\n")
 
@@ -186,28 +185,75 @@ cat(
 
 # ---------------- Plot: links Kurven (vollständig vs. unvollständig nur für Anzeige),
 # rechts Diff + 95%-Band ----------------
+library(ggplot2)
+library(patchwork)
+
 df_obs <- as.data.frame(X) %>%
-  mutate(id = rownames(X),
-         gruppe = ifelse(rowSums(is.na(.)) == 0, "vollständig", "unvollständig")) %>%
-  pivot_longer(cols = -c(id, gruppe), names_to = "t_idx", values_to = "x") %>%
+  mutate(
+    id = rownames(X),
+    group = ifelse(rowSums(is.na(.)) == 0, "complete", "incomplete")
+  ) %>%
+  pivot_longer(cols = -c(id, group), names_to = "t_idx", values_to = "x") %>%
   mutate(t = grid[as.integer(sub("V", "", t_idx))])
 
 p_left <- ggplot(df_obs, aes(x = t, y = x, group = id)) +
-  geom_line(aes(color = gruppe), linewidth = 0.9, na.rm = TRUE) +
-  scale_color_manual(values = c("vollständig" = "grey60", "unvollständig" = "black")) +
-  labs(title = "Brownian-Pfade nach MNAR-Zensur", x = "Zeit t", y = "X(t)", color = "Gruppe") +
-  theme_minimal() + theme(legend.position = "bottom")
+  geom_line(
+    data = subset(df_obs, group == "complete"),
+    color = "grey70",
+    linewidth = 0.6,
+    na.rm = TRUE
+  ) +
+  geom_line(
+    data = subset(df_obs, group == "incomplete"),
+    color = "black",
+    linewidth = 0.7,
+    na.rm = TRUE
+  ) +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.2)) +   # << neue Breaks
+  labs(x = "time", y = "X(t)", color = "Group") +
+  theme_minimal(base_size = 18, base_family = "Times New Roman") +
+  theme(
+    legend.position = "none",
+    text = element_text(family = "Times New Roman"),
+    axis.title = element_text(size = 20),
+    axis.text  = element_text(size = 16)
+  )
+
 
 p_right <- ggplot(bands, aes(t, diff)) +
   geom_hline(yintercept = 0, linewidth = 0.3, color = "grey35") +
-  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.15) +
-  geom_line(linewidth = 1) +
-  geom_line(aes(y = lower), linetype = 2) +
-  geom_line(aes(y = upper), linetype = 2) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.15, fill = "grey50") +
+  geom_line(linewidth = 1, color = "black") +
+  geom_line(aes(y = lower), linetype = 2, color = "black") +
+  geom_line(aes(y = upper), linetype = 2, color = "black") +
+  # X-Achse mit Breaks wie im Beispiel
+  scale_x_continuous(breaks = seq(0, 1, by = 0.2)) +
+  # Y-Achse reicht bis ±1.5, zeigt aber nur bis ±1.0
+  scale_y_continuous(limits = c(-1, 1.5),
+                     breaks = seq(-1, 1.5, by = 0.5)) +
   labs(x = "time", y = "difference in means") +
-  theme_minimal()
+  theme_minimal(base_size = 18, base_family = "Times New Roman") +
+  theme(
+    text = element_text(family = "Times New Roman"),
+    axis.title = element_text(size = 18),
+    axis.text  = element_text(size = 16)
+  )
 
-p_left + p_right
+
+Figure_5 <- p_left + plot_spacer() + p_right +
+  plot_layout(widths = c(1, 0.1, 1))
+
+# Abspeichern
+ggsave(
+  filename = "Plots/Figure_5.png",
+  plot     = Figure_5,
+  width    = 10,    
+  height   = 4,
+  dpi      = 300
+)
+
+
+
 
 
 # ============================================================================
@@ -295,3 +341,55 @@ ggplot(res_df, aes(x = b, y = rej, shape = test)) +
        title = "Rejection probabilities under MNAR censoring (a = -1, n = 100)") +
   theme_classic(base_size = 12) +
   theme(legend.position = c(.88, .18))
+
+library(ggplot2)
+library(extrafont)
+
+#Figure 4: Rejection Probabilities
+rejection_proba <- readRDS("C:/LMU/Bachelor/Bacherlor_FDA/results/Figure_4_5/res_df_20250913-193109.rds")
+
+Figure_4 <- ggplot(rejection_proba, aes(x = b, y = rej, shape = test, color = test)) +
+  geom_point(size = 5, stroke = 1.5, shape = 4) +
+  scale_color_manual(
+    values = c("T[mu,L^2]" = "steelblue",
+               "T[mu,D]"   = "red"),
+    breaks = c("T[mu,L^2]", "T[mu,D]"),
+    labels = c(
+      "T[mu,L^2]" = expression(T[mu]*","~L^2),
+      "T[mu,D]"   = expression(T[mu]*","~D)
+    )
+  ) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.1)) +
+  scale_x_continuous(limits = c(1, 2), breaks = seq(1, 2, by = 0.2)) +
+  labs(x = "b", y = "rejection probability", shape = NULL, color = NULL) +
+  theme_classic(base_size = 18, base_family = "Times New Roman") +
+  theme(
+    legend.position = "inside",
+    legend.position.inside = c(0.895, 0.227),
+    legend.margin = margin(7, 7, 7, 7),
+    text = element_text(family = "Times New Roman"),
+    axis.title = element_text(size = 18),
+    axis.text  = element_text(size = 16),
+    legend.background = element_rect(fill = "white", colour = "black"),
+    legend.key.size = unit(1, "lines"),             
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14),
+    panel.border = element_rect(colour = "black", fill = NA),
+    panel.grid.major = element_line(colour = "grey80", size = 0.5),
+    panel.grid.minor = element_blank()
+  ) +
+  guides(
+    shape = guide_legend(override.aes = list(size = 4))
+  )
+
+
+
+ggsave(
+  filename = "Plots/Figure_4.png",
+  plot     = Figure_4,
+  width    = 10,    
+  height   = 5,
+  dpi      = 300
+)
+
+
