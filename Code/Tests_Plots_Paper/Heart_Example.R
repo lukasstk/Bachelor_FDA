@@ -7,6 +7,8 @@ suppressPackageStartupMessages({
   library(patchwork)
   # Optional für Bootstrap:
   library(doParallel); library(doRNG); library(foreach)
+  library(extrafont)
+  loadfonts(device = "win")
 })
 
 # ---- Deine neuen Funktionen müssen im Environment sein ----
@@ -115,6 +117,8 @@ p_left <- ggplot(plot_df, aes(x = ti, y = y0, group = id)) +
     axis.text         = element_text(size = 16),
     axis.line         = element_line(color = "black", linewidth = 0.5),
     axis.ticks        = element_line(color = "black", linewidth = 0.5),
+    axis.title.x = element_text(size = 20, margin = margin(t = 10)),
+    axis.title.y = element_text(size = 20, margin = margin(r = 10)),
     axis.ticks.length = unit(3, "pt")
   )
 
@@ -140,6 +144,8 @@ p_right <- ggplot(df_band, aes(x = ti)) +
     axis.text         = element_text(size = 16),
     axis.line         = element_line(color = "black", linewidth = 0.5),
     axis.ticks        = element_line(color = "black", linewidth = 0.5),
+    axis.title.x = element_text(size = 20, margin = margin(t = 10)),
+    axis.title.y = element_text(size = 20, margin = margin(r = 10)),
     axis.ticks.length = unit(3, "pt")
   )
 

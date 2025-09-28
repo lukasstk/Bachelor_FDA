@@ -1,5 +1,7 @@
 # --- Setup ---------------------------------------------------------------
 library(ggplot2)
+library(extrafont)
+loadfonts(device = "win")
 
 set.seed(42)
 t <- seq(0, 1, length.out = 400)
@@ -53,19 +55,23 @@ gen_curve <- function(coverage, id, panel, phase = 0, amp = 1, offset = 0) {
 jit <- function(v, s = 0.02) v + runif(1, -s, s)
 
 # Gemeinsames Theme: größere Labels, Kasten pro Panel, keine Tick-Werte
-base_theme <- theme_minimal(base_size = 12) +
+base_theme <- theme_minimal(base_size = 20, base_family = "Times New Roman") +
   theme(
-    strip.text = element_text(size = 18), 
+    text = element_text(family = "Times New Roman"),
+    strip.text = element_text(size = 30, family = "Times New Roman",
+                              margin = margin(t = 10)),   # Abstand der Facettenlabels (A,B) nach unten
+    strip.placement = "outside",                          # Labels nach außen legen
     panel.spacing.x = unit(12, "pt"),
     panel.grid.minor = element_blank(),
     panel.grid.major = element_line(color = "grey90"),
     panel.background = element_blank(),
     panel.border = element_rect(color = "black", fill = NA, linewidth = 1.1),
-    axis.text = element_blank(),                          
+    axis.text = element_blank(),
     axis.title.x = element_blank(),
-    axis.title.y = element_text(size = 18,                
-                                margin = margin(r = 10))
+    axis.title.y = element_text(size = 30, family = "Times New Roman",
+                                margin = margin(r = 20))   # weiter weg von der Achse
   )
+
 
 
 # --- Example 1: complete (A) vs incomplete (B) --------------------------
@@ -116,7 +122,7 @@ print(p_ex2)
 
 
 # Plot 1 speichern
-ggsave("example1.png", plot = p_ex1, width = 8, height = 4, dpi = 300)
+ggsave("Plots/example1.png", plot = p_ex1, width = 10, height = 4, dpi = 300)
 
 # Plot 2 speichern
-ggsave("example2.png", plot = p_ex2, width = 8, height = 4, dpi = 300)
+ggsave("Plots/example2.png", plot = p_ex2, width = 10, height = 4, dpi = 300)

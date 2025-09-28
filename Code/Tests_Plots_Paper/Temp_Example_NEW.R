@@ -16,6 +16,8 @@ suppressPackageStartupMessages({
   library(foreach)
   library(pbapply)   # pblapply()
   # library(tf)      # optional; wir nutzen tf::tfd() qualifiziert
+  library(extrafont)
+  loadfonts(device = "win")
 })
 
 # ===================== 1) Tageskurven aus temp_graz ============================
@@ -150,8 +152,12 @@ p_left <- ggplot(df_long_plot, aes(x = slot, y = temp, group = date)) +
   scale_x_discrete(
     breaks = c("00:00", "06:00", "12:00", "18:00", "23:30"),
     labels = c("00:00", "06:00", "12:00", "18:00", "24:00"),
-    drop   = FALSE
+    drop   = FALSE,
+    expand = c(0, 0)
   ) +
+  scale_y_continuous(
+    breaks = function(x) setdiff(pretty(x), 10)  
+  ) + 
   labs(x = "time", y = expression("temperature ("*degree*C*")")) +
   theme_minimal(base_size = 18, base_family = "Times New Roman") +
   theme(
@@ -161,6 +167,8 @@ p_left <- ggplot(df_long_plot, aes(x = slot, y = temp, group = date)) +
     axis.text         = element_text(size = 16),
     axis.line         = element_line(color = "black", linewidth = 0.5),
     axis.ticks        = element_line(color = "black", linewidth = 0.5),
+    axis.title.x = element_text(size = 20, margin = margin(t = 10)),
+    axis.title.y = element_text(size = 20, margin = margin(r = 10)),
     axis.ticks.length = unit(3, "pt")
   )
 
@@ -175,7 +183,8 @@ p_right <- ggplot(df_cb, aes(x = time)) +
   scale_x_discrete(
     breaks = c("00:00", "06:00", "12:00", "18:00", "23:30"),
     labels = c("00:00", "06:00", "12:00", "18:00", "24:00"),
-    drop   = FALSE
+    drop   = FALSE,
+    expand = c(0, 0)
   ) +
   coord_cartesian(ylim = c(-10, 10)) +
   labs(x = "time", y = expression("Difference in means ("*degree*C*")")) +
@@ -186,6 +195,8 @@ p_right <- ggplot(df_cb, aes(x = time)) +
     axis.text         = element_text(size = 16),
     axis.line         = element_line(color = "black", linewidth = 0.5),
     axis.ticks        = element_line(color = "black", linewidth = 0.5),
+    axis.title.x = element_text(size = 20, margin = margin(t = 10)),
+    axis.title.y = element_text(size = 20, margin = margin(r = 10)),
     axis.ticks.length = unit(3, "pt")
   )
 
@@ -284,7 +295,9 @@ Figure_7 <- ggplot(df_p, aes(x = m, y = p, shape = test, color = test)) +
     legend.margin = margin(7, 7, 7, 7),
     text = element_text(family = "Times New Roman"),
     axis.title = element_text(size = 18),
-    axis.text  = element_text(size = 16),
+    axis.text  = element_text(size = 18),
+    axis.title.x = element_text(size = 25, margin = margin(t = 30)),
+    axis.title.y = element_text(size = 25, margin = margin(r = 30)),
     legend.background = element_rect(fill = "white", colour = "black"),
     legend.key.size = unit(1, "lines"),             
     legend.text = element_text(size = 14),

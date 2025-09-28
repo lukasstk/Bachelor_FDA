@@ -209,16 +209,21 @@ p_left <- ggplot(df_obs, aes(x = t, y = x, group = id)) +
     linewidth = 0.7,
     na.rm = TRUE
   ) +
-  scale_x_continuous(breaks = seq(0, 1, by = 0.2)) +   # << neue Breaks
+  scale_x_continuous(breaks = seq(0, 1, by = 0.2), expand = c(0, 0)) +
   labs(x = "time", y = "X(t)", color = "Group") +
   theme_minimal(base_size = 18, base_family = "Times New Roman") +
   theme(
     legend.position = "none",
-    text = element_text(family = "Times New Roman"),
-    axis.title = element_text(size = 20),
-    axis.text  = element_text(size = 16)
+    text            = element_text(family = "Times New Roman"),
+    axis.title      = element_text(size = 20),
+    axis.title.x    = element_text(size = 20, margin = margin(t = 10)),
+    axis.title.y    = element_text(size = 20, margin = margin(r = 10)),
+    axis.text       = element_text(size = 16),
+    axis.line.x     = element_line(color = "black", linewidth = 0.5),
+    axis.line.y     = element_line(color = "black", linewidth = 0.5),
+    axis.ticks      = element_line(color = "black", linewidth = 0.5),
+    axis.ticks.length = unit(3, "pt")
   )
-
 
 p_right <- ggplot(bands, aes(t, diff)) +
   geom_hline(yintercept = 0, linewidth = 0.3, color = "grey35") +
@@ -226,19 +231,22 @@ p_right <- ggplot(bands, aes(t, diff)) +
   geom_line(linewidth = 1, color = "black") +
   geom_line(aes(y = lower), linetype = 2, color = "black") +
   geom_line(aes(y = upper), linetype = 2, color = "black") +
-  # X-Achse mit Breaks wie im Beispiel
-  scale_x_continuous(breaks = seq(0, 1, by = 0.2)) +
-  # Y-Achse reicht bis ±1.5, zeigt aber nur bis ±1.0
+  scale_x_continuous(breaks = seq(0, 1, by = 0.2), expand = c(0, 0)) +
   scale_y_continuous(limits = c(-1, 1.5),
                      breaks = seq(-1, 1.5, by = 0.5)) +
   labs(x = "time", y = "difference in means") +
   theme_minimal(base_size = 18, base_family = "Times New Roman") +
   theme(
-    text = element_text(family = "Times New Roman"),
-    axis.title = element_text(size = 18),
-    axis.text  = element_text(size = 16)
+    text            = element_text(family = "Times New Roman"),
+    axis.title      = element_text(size = 18),
+    axis.title.x    = element_text(size = 20, margin = margin(t = 10)),
+    axis.title.y    = element_text(size = 20, margin = margin(r = 10)),
+    axis.text       = element_text(size = 16),
+    axis.line.x     = element_line(color = "black", linewidth = 0.5),
+    axis.line.y     = element_line(color = "black", linewidth = 0.5),
+    axis.ticks      = element_line(color = "black", linewidth = 0.5),
+    axis.ticks.length = unit(3, "pt")
   )
-
 
 Figure_5 <- p_left + plot_spacer() + p_right +
   plot_layout(widths = c(1, 0.1, 1))
@@ -247,12 +255,10 @@ Figure_5 <- p_left + plot_spacer() + p_right +
 ggsave(
   filename = "Plots/Figure_5.png",
   plot     = Figure_5,
-  width    = 10,    
+  width    = 10,
   height   = 4,
   dpi      = 300
 )
-
-
 
 
 
@@ -368,12 +374,13 @@ Figure_4 <- ggplot(rejection_proba, aes(x = b, y = rej, shape = test, color = te
     legend.position.inside = c(0.895, 0.227),
     legend.margin = margin(7, 7, 7, 7),
     text = element_text(family = "Times New Roman"),
-    axis.title = element_text(size = 18),
-    axis.text  = element_text(size = 16),
+    axis.title.x = element_text(size = 25, margin = margin(t = 30)),  # größer + mehr Abstand
+    axis.title.y = element_text(size = 25, margin = margin(r = 30)),  # größer + mehr Abstand
+    axis.text  = element_text(size = 18),                             # Ticklabels größer
     legend.background = element_rect(fill = "white", colour = "black"),
-    legend.key.size = unit(1, "lines"),             
-    legend.text = element_text(size = 14),
-    legend.title = element_text(size = 14),
+    legend.key.size = unit(1.2, "lines"),             
+    legend.text = element_text(size = 16),
+    legend.title = element_text(size = 16),
     panel.border = element_rect(colour = "black", fill = NA),
     panel.grid.major = element_line(colour = "grey80", size = 0.5),
     panel.grid.minor = element_blank()
@@ -381,6 +388,7 @@ Figure_4 <- ggplot(rejection_proba, aes(x = b, y = rej, shape = test, color = te
   guides(
     shape = guide_legend(override.aes = list(size = 4))
   )
+
 
 
 

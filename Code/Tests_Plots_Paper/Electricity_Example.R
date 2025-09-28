@@ -6,6 +6,8 @@ suppressPackageStartupMessages({
   library(tf)          # für tf::tfd / tf::tf_integrate
   library(tidyfun)
   library(patchwork)
+  library(extrafont)
+  loadfonts(device = "win")
 })
 
 # ---- Funktionen: asym_mean_L2_test(), asym_mean_sup_test() ----
@@ -101,6 +103,8 @@ p_left <- ggplot(df_long, aes(x = demand, y = logprice, group = id)) +
     axis.text         = element_text(size = 16),
     axis.line         = element_line(color = "black", linewidth = 0.5),
     axis.ticks        = element_line(color = "black", linewidth = 0.5),
+    axis.title.x = element_text(size = 20, margin = margin(t = 10)),
+    axis.title.y = element_text(size = 20, margin = margin(r = 10)),
     axis.ticks.length = unit(3, "pt")
   )
 
@@ -125,6 +129,8 @@ p_right <- ggplot(df_band, aes(x = demand)) +
     axis.text         = element_text(size = 16),
     axis.line         = element_line(color = "black", linewidth = 0.5),
     axis.ticks        = element_line(color = "black", linewidth = 0.5),
+    axis.title.x = element_text(size = 20, margin = margin(t = 10)),
+    axis.title.y = element_text(size = 20, margin = margin(r = 10)),
     axis.ticks.length = unit(3, "pt")
   )
 
