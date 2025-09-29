@@ -105,15 +105,12 @@ colnames(X) <- NULL
 O <- 1L * !is.na(X)
 
 # ---------------- Neue Algorithmen aufrufen (Auto-Gruppierung) ----------------
-B_mc  <- 2000
-alpha <- 0.05
-
 # Algo 1 (neu): L2-Test (asymptotisch)
 res_L2 <- asym_mean_L2_test(
   X   = X,
   # keine groups → Auto-Gruppierung (observed_ratio = 1)
   fve     = 0.99,
-  n_sim   = 5000,       # MC für KL-Mischung (p-Wert)
+  n_sim   = 10000,       # MC für KL-Mischung (p-Wert)
   min_frac= 0.10,
   seed    = 42
 )
@@ -124,7 +121,7 @@ res_sup <- asym_mean_sup_test(
   X        = X,
   # keine groups → Auto-Gruppierung (observed_ratio = 1)
   fve          = 0.99,
-  n_sim        = 5000,
+  n_sim        = 10000,
   min_frac     = 0.10,
   seed         = 42,
   alpha        = alpha,
@@ -138,7 +135,7 @@ bands_list <- asym_mean_sup_test(
   X        = X,
   # keine groups → Auto-Gruppierung (observed_ratio = 1)
   fve          = 0.99,
-  n_sim        = 5000,
+  n_sim        = 10000,
   min_frac     = 0.10,
   seed         = 42,
   alpha        = alpha,
@@ -157,7 +154,7 @@ bands <- data.frame(
 res_boot_L2 <- boot_mean_test(
   X        = X,
   # keine groups → Auto-Gruppierung (observed_ratio = 1)
-  n_boot       = B_mc,
+  n_boot       = 10000,
   min_frac     = 0.10,
   alpha        = alpha,
   stat         = "L2",
@@ -169,7 +166,7 @@ res_boot_L2 <- boot_mean_test(
 res_boot_D <- boot_mean_test(
   X        = X,
   # keine groups → Auto-Gruppierung (observed_ratio = 1)
-  n_boot        = B_mc,
+  n_boot        = 10000,
   min_frac     = 0.10,
   alpha        = alpha,
   stat         = "D",

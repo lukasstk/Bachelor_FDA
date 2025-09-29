@@ -71,14 +71,14 @@ set.seed(2025)
 # (A) L2-Test (optional, ohne Bänder)
 res_L2 <- boot_mean_test(
   fd = fd, observed_ratio = 1, min_frac = 0.10,
-  n_boot = 5000, alpha = 0.05, stat = "L2",
+  n_boot = 10000, alpha = 0.05, stat = "L2",
   compute_bands = FALSE, return_boot = FALSE
 )
 
 # (B) Supremums-/D-Test MIT Bootstrap-Bändern (Konfidenzbänder via Bootstrap)
 res_sup <- boot_mean_test(
   fd = fd, observed_ratio = 1, min_frac = 0.10,
-  n_boot = 5000, alpha = 0.05, stat = "D",
+  n_boot = 10000, alpha = 0.05, stat = "D",
   compute_bands = TRUE,    # <-- Bänder per Bootstrap
   return_boot = FALSE
 )

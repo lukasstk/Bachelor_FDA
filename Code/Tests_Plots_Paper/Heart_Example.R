@@ -42,15 +42,15 @@ row.names(X) <- as.character(wide_hr$id)
 set.seed(2025)
 
 res_L2 <- asym_mean_L2_test(
-  fd = fd_hr
+  fd = fd_hr, n_sim = 10000
 )
 
 res_sup <- asym_mean_sup_test(
-  fd = fd_hr
+  fd = fd_hr, n_sim = 10000
 )
 
 res_sup_bands <- asym_mean_sup_test(
-  fd = fd_hr, bands_only = TRUE
+  fd = fd_hr, n_sim = 10000, bands_only = TRUE
 )
 
 cat("\n=== HEART RATE: Ergebnisse (complete vs incomplete) ===\n")

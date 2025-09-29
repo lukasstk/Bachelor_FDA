@@ -429,7 +429,7 @@ NULL
 #' res_L2$p.value
 #' @export
 asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 1,
-                              fve = 0.99, n_sim = 5000,
+                              fve = 0.99, n_sim = 10000,
                               min_frac = 0.10, seed = NULL) {
   prep <- .prepare_inputs(fd, X, groups, observed_ratio)
   X <- prep$X
@@ -526,7 +526,7 @@ asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio
 #' lines(res_sup$bands$grid, res_sup$bands$upper, lty = 2)
 #' @export
 asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 1,
-                               fve = 0.99, n_sim = 5000,
+                               fve = 0.99, n_sim = 10000,
                                min_frac = 0.10, seed = NULL, alpha = 0.05,
                                compute_bands = TRUE, bands_only = FALSE) {
   prep <- .prepare_inputs(fd, X, groups, observed_ratio)
@@ -651,7 +651,7 @@ asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_rati
 #' res_boot$p.value 
 #' @export
 boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 1,
-                           n_boot = 5000,
+                           n_boot = 10000,
                            min_frac = 0.10, alpha = 0.05,
                            ncpus = parallel::detectCores(logical = TRUE),
                            seed = NULL,

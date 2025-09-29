@@ -31,7 +31,7 @@ res_L2 <- asym_mean_L2_test(
   observed_ratio = observed_ratio,  
   min_frac = 0.10,
   fve = 0.99,
-  n_sim = 5000,
+  n_sim = 10000,
   seed = 42
 )
 
@@ -40,7 +40,7 @@ res_sup <- asym_mean_sup_test(
   observed_ratio = observed_ratio,   
   min_frac = 0.10,
   fve = 0.99,
-  n_sim = 5000,
+  n_sim = 10000,
   compute_bands = TRUE,
   seed = 42
 )
