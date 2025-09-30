@@ -130,7 +130,7 @@ NULL
 #' Coerce `tfd` to dense matrix + grid
 #' @keywords internal
 #' @noRd
-.fd_tOrix <- function(fd) {
+.fd_to_matrix <- function(fd) {
   checkmate::assert_class(fd, c("tfd", "tfd_irreg"))
   
   all_grids <- tf::tf_arg(fd)
@@ -182,7 +182,7 @@ NULL
   checkmate::assert_number(observed_ratio, lower = 0, upper = 1)
   
   if (!is.null(fd)) {
-    conv  <- .fd_tOrix(fd)
+    conv  <- .fd_to_matrix(fd)
     X <- conv$X
     grid_vec <- conv$grid
   } else {
@@ -612,7 +612,6 @@ asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_rati
 #' @param seed RNG seed (passed to doRNG).
 #' @param stat `"L2"`, `"D"` oder `c("L2","D")`.
 #' @param compute_bands Compute confidence bands (Supremum only)?
-#' @param return_boot Attach bootstrap statistics?
 #' @param chunk_size Number of bootstrap replicates per foreach task.
 #' @param manage_backend Backend control (`"auto"`, `"force_pool"`, `"sequential"`).
 #' @param worker_blas_threads BLAS/OpenMP threads per worker (internal pool only).
@@ -657,7 +656,6 @@ boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 
                            seed = NULL,
                            stat = c("L2", "D"),
                            compute_bands = TRUE,
-                           return_boot = FALSE,
                            chunk_size = NULL,
                            manage_backend = "auto",
                            worker_blas_threads = 1L,
