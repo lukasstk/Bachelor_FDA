@@ -1,4 +1,4 @@
-Package: mcar.test
+Package: mcartest
 Type: Package
 Title: Testing the Missing Completely at Random Assumption for Functional Data
 Version: 0.1.0

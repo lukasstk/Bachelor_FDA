@@ -46,10 +46,10 @@ NULL
   # Reset foreach/doRNG
   try(foreach::registerDoSEQ(), silent = TRUE)
   try(doRNG::registerDoRNG(NULL), silent = TRUE)
-  
+
   # Stop implicit cluster
   suppressWarnings(try(doParallel::stopImplicitCluster(), silent = TRUE))
-  
+
   # Stop own pool
   if (exists("cl", envir = .tfu_par_env, inherits = FALSE)) {
     cl <- .tfu_par_env$cl
@@ -58,21 +58,21 @@ NULL
     }
     rm("cl", envir = .tfu_par_env)
   }
-  
+
   # Reset BLAS/OpenMP threads
   if (exists("old_threads", envir = .tfu_par_env, inherits = FALSE)) {
     olds <- .tfu_par_env$old_threads
     if (!is.null(olds)) {
       if (!is.na(olds[1])) Sys.setenv(OPENBLAS_NUM_THREADS = olds[1])
-      if (!is.na(olds[2])) Sys.setenv(MKL_NUM_THREADS     = olds[2])
-      if (!is.na(olds[3])) Sys.setenv(OMP_NUM_THREADS     = olds[3])
+      if (!is.na(olds[2])) Sys.setenv(MKL_NUM_THREADS = olds[2])
+      if (!is.na(olds[3])) Sys.setenv(OMP_NUM_THREADS = olds[3])
     }
     rm("old_threads", envir = .tfu_par_env)
   }
-  
+
   # Reset RNG to safe reproducible state
   suppressWarnings(RNGkind("L'Ecuyer-CMRG"))
-  
+
   invisible(TRUE)
 }
 
@@ -86,7 +86,8 @@ NULL
 #' @noRd
 .onLoad <- function(libname, pkgname) {
   assign(".tfu_par_env", new.env(parent = emptyenv()),
-         envir = parent.env(environment()))
+    envir = parent.env(environment())
+  )
   reg.finalizer(.tfu_par_env, function(e) try(.reset_backend(), silent = TRUE), onexit = TRUE)
 }
 
@@ -110,20 +111,20 @@ NULL
 .groups_to_logical <- function(groups) {
   checkmate::assert_atomic_vector(groups, any.missing = FALSE)
   if (is.factor(groups)) groups <- as.character(droplevels(groups))
-  
+
   # Sicherstellen: genau 2 verschiedene Gruppen
   checkmate::assert(
     length(unique(groups)) == 2,
     .var.name = "groups"
   )
-  
+
   if (is.logical(groups)) {
     return(groups)
   } else if (is.character(groups) || is.numeric(groups) || is.integer(groups)) {
     u <- unique(groups)
     return(groups == u[1])
   }
-  
+
   stop("`groups` must be logical/character/factor/numeric.")
 }
 
@@ -132,17 +133,17 @@ NULL
 #' @noRd
 .fd_to_matrix <- function(fd) {
   checkmate::assert_class(fd, c("tfd", "tfd_irreg"))
-  
+
   all_grids <- tf::tf_arg(fd)
   if (is.list(all_grids)) {
     g <- sort(unique(unlist(all_grids)))
   } else {
     g <- all_grids
   }
-  
+
   X_try <- suppressWarnings(as.matrix(fd))
   checkmate::assert_matrix(X_try, mode = "numeric", min.cols = 2)
-  
+
   list(X = X_try, grid = g)
 }
 
@@ -153,21 +154,21 @@ NULL
   checkmate::assert_matrix(O, any.missing = FALSE)
   checkmate::assert_logical(group_A, len = nrow(O))
   checkmate::assert_number(min_frac, lower = 0, upper = 1)
-  
-  n  <- nrow(O)
+
+  n <- nrow(O)
   IA <- as.numeric(group_A)
   IB <- 1 - IA
   cA <- colSums(O * IA)
   cB <- colSums(O * IB)
-  
+
   idx_strict <- which(pmin(cA, cB) > n * min_frac)
   if (length(idx_strict) >= 2L) {
     return(list(idx = idx_strict, min_frac_used = min_frac, fallback = NULL))
   }
-  
+
   stop(
     paste0(
-      "No suitable subdomain found: strict criterion (min_frac = ", format(min_frac), 
+      "No suitable subdomain found: strict criterion (min_frac = ", format(min_frac),
       ") not satisfied at >= 2 time points."
     ),
     call. = FALSE
@@ -180,23 +181,23 @@ NULL
 #' @noRd
 .prepare_inputs <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 1) {
   checkmate::assert_number(observed_ratio, lower = 0, upper = 1)
-  
+
   if (!is.null(fd)) {
-    conv  <- .fd_to_matrix(fd)
+    conv <- .fd_to_matrix(fd)
     X <- conv$X
     grid_vec <- conv$grid
   } else {
     checkmate::assert_matrix(X, mode = "numeric", min.rows = 1, min.cols = 2)
     grid_vec <- seq(0, 1, length.out = ncol(X))
   }
-  
+
   n <- nrow(X)
   O <- 1L * (!is.na(X))
-  
+
   if (!is.null(groups)) {
     checkmate::assert_atomic_vector(groups, len = n, any.missing = FALSE)
     group_A <- .groups_to_logical(groups)
-    
+
     obs_frac <- rowMeans(O != 0)
     meanA <- mean(obs_frac[group_A], na.rm = TRUE)
     meanB <- mean(obs_frac[!group_A], na.rm = TRUE)
@@ -213,12 +214,12 @@ NULL
       stop("Auto-grouping failed: one group empty. Adjust `observed_ratio`.")
     }
   }
-  
+
   list(
-    X   = X,
-    O   = O,
+    X = X,
+    O = O,
     group_A = as.logical(group_A),
-    grid    = grid_vec
+    grid = grid_vec
   )
 }
 
@@ -228,13 +229,15 @@ NULL
 #' @noRd
 .trapezoid_weights <- function(x) {
   checkmate::assert_numeric(x, any.missing = FALSE, min.len = 1, sorted = TRUE)
-  
+
   m <- length(x)
-  if (m == 1L) return(1)
+  if (m == 1L) {
+    return(1)
+  }
   w <- numeric(m)
-  w[1] <- (x[2]-x[1])/2
-  w[m] <- (x[m]-x[m-1])/2
-  if (m > 2L) w[2:(m-1)] <- (x[3:m] - x[1:(m-2)])/2
+  w[1] <- (x[2] - x[1]) / 2
+  w[m] <- (x[m] - x[m - 1]) / 2
+  if (m > 2L) w[2:(m - 1)] <- (x[3:m] - x[1:(m - 2)]) / 2
   w
 }
 
@@ -243,7 +246,7 @@ NULL
 #' @keywords internal
 #' @noRd
 .group_mean_estimators <- function(X, O, group_A) {
-  n  <- nrow(X)
+  n <- nrow(X)
   IA <- as.numeric(group_A)
   IB <- 1 - IA
   pA_hat <- colSums(O * IA) / n
@@ -257,11 +260,11 @@ NULL
 #' @keywords internal
 #' @noRd
 .covariance_estimator <- function(X, O, group_A, muA_hat, muB_hat, pA_hat, pB_hat) {
-  n  <- nrow(X)
+  n <- nrow(X)
   IA <- as.numeric(group_A)
   IB <- 1 - IA
   Xtilde <- X
-  Xtilde[ group_A, ] <- sweep(X[ group_A, , drop = FALSE], 2, muA_hat, `-`)
+  Xtilde[group_A, ] <- sweep(X[group_A, , drop = FALSE], 2, muA_hat, `-`)
   Xtilde[!group_A, ] <- sweep(X[!group_A, , drop = FALSE], 2, muB_hat, `-`)
   Xtilde[is.na(Xtilde)] <- 0
   A_resid <- sweep((Xtilde * O) * IA, 2, pA_hat, "/")
@@ -270,11 +273,11 @@ NULL
   (K_hat + t(K_hat)) / 2
 }
 
-#' KL basis from covariance 
+#' KL basis from covariance
 #' @keywords internal
 #' @noRd
 .kl_decomposition <- function(K, grid, tol = sqrt(.Machine$double.eps)) {
-  w  <- .trapezoid_weights(grid)
+  w <- .trapezoid_weights(grid)
   sw <- sqrt(w)
   S <- (sw %o% sw) * K
   S <- (S + t(S)) / 2
@@ -282,11 +285,11 @@ NULL
   if (any(ev_test < -tol * max(1, abs(ev_test[1])))) {
     stop(sprintf("Weighted covariance is not PSD (min eigenvalue = %.4g).", min(ev_test)), call. = FALSE)
   }
-  ev  <- eigen(S, symmetric = TRUE)
+  ev <- eigen(S, symmetric = TRUE)
   eigenvalues <- ev$values
-  eigenfunctions   <- sweep(ev$vectors, 1, sw, "/")
+  eigenfunctions <- sweep(ev$vectors, 1, sw, "/")
   norms <- sqrt(colSums(eigenfunctions^2 * w))
-  eigenfunctions   <- sweep(eigenfunctions, 2, norms, "/")
+  eigenfunctions <- sweep(eigenfunctions, 2, norms, "/")
   list(eigenvalues = eigenvalues, eigenfunctions = eigenfunctions, w = w)
 }
 
@@ -296,15 +299,17 @@ NULL
 #' @noRd
 .confidence_bands <- function(stat, diff, W, n, alpha, grid) {
   if (identical(stat, "D")) {
-    q_alpha   <- as.numeric(stats::quantile(W, probs = 1 - alpha, names = FALSE, na.rm = TRUE))
+    q_alpha <- as.numeric(stats::quantile(W, probs = 1 - alpha, names = FALSE, na.rm = TRUE))
     halfwidth <- q_alpha / sqrt(n)
     lower <- diff - halfwidth
     upper <- diff + halfwidth
     band <- tf::tfd(matrix(c(lower, upper), nrow = 2, byrow = TRUE), arg = grid)
-    return(list(type = "simultaneous", band = band,
-                lower = lower, upper = upper, alpha = alpha, grid = grid))
+    return(list(
+      type = "simultaneous", band = band,
+      lower = lower, upper = upper, alpha = alpha, grid = grid
+    ))
   }
-  
+
   stop("Unknown stat type in .confidence_bands(): must be 'D'.")
 }
 
@@ -326,8 +331,8 @@ NULL
     method      = method,
     data.name   = data_name,
     alpha       = alpha,
-    bands       = bands,   
-    grid        = grid     
+    bands       = bands,
+    grid        = grid
   )
   class(out) <- "htest"
   out
@@ -343,55 +348,64 @@ NULL
 #' - Pin BLAS/OpenMP threads per worker to avoid oversubscription
 #' @keywords internal
 #' @noRd
-.init_parallel <- function(manage_backend = c("auto","force_pool","sequential"),
+.init_parallel <- function(manage_backend = c("auto", "force_pool", "sequential"),
                            ncpus = parallel::detectCores(logical = TRUE),
                            worker_blas_threads = 1L,
                            seed = 42) {
-  checkmate::assert_choice(manage_backend, c("auto","force_pool","sequential"))
+  checkmate::assert_choice(manage_backend, c("auto", "force_pool", "sequential"))
   checkmate::assert_int(ncpus, lower = 1)
   checkmate::assert_int(worker_blas_threads, lower = 1)
   checkmate::assert_number(seed, null.ok = TRUE)
-  
+
   # RNG setup
   if (!is.null(seed)) {
     suppressWarnings(RNGkind("L'Ecuyer-CMRG"))
     doRNG::registerDoRNG(seed)
   }
-  
+
   # Helper: cluster alive?
   .is_alive <- function(cl) {
-    if (is.null(cl)) return(FALSE)
-    ok <- tryCatch({ parallel::clusterCall(cl, function() TRUE); TRUE },
-                   error = function(e) FALSE)
+    if (is.null(cl)) {
+      return(FALSE)
+    }
+    ok <- tryCatch(
+      {
+        parallel::clusterCall(cl, function() TRUE)
+        TRUE
+      },
+      error = function(e) FALSE
+    )
     isTRUE(ok)
   }
-  
+
   # --- sequential ---
   if (manage_backend == "sequential") {
     foreach::registerDoSEQ()
     return(list(nworkers = 1L, used = "sequential"))
   }
-  
+
   # --- auto: reuse if possible ---
   if (manage_backend == "auto" && .is_alive(.tfu_par_env$cl)) {
     doParallel::registerDoParallel(.tfu_par_env$cl)
     nworkers <- foreach::getDoParWorkers()
     return(list(nworkers = nworkers, used = "internal-reused"))
   }
-  
+
   # --- otherwise: create new (force_pool or auto with no alive cluster) ---
   .reset_backend()
   cl <- parallel::makeCluster(ncpus, outfile = "")
   parallel::clusterCall(cl, function(k) {
-    Sys.setenv(OPENBLAS_NUM_THREADS = k,
-               MKL_NUM_THREADS      = k,
-               OMP_NUM_THREADS      = k)
+    Sys.setenv(
+      OPENBLAS_NUM_THREADS = k,
+      MKL_NUM_THREADS = k,
+      OMP_NUM_THREADS = k
+    )
     NULL
   }, worker_blas_threads)
   if (!is.null(seed)) parallel::clusterSetRNGStream(cl, iseed = seed)
   doParallel::registerDoParallel(cl)
   .tfu_par_env$cl <- cl
-  
+
   list(nworkers = ncpus, used = if (manage_backend == "force_pool") "internal-forced" else "internal-new")
 }
 
@@ -411,10 +425,14 @@ NULL
 #' @return `htest` (with extras).
 #' @examples
 #' set.seed(1)
-#' m <- 50; n <- 40
+#' m <- 50
+#' n <- 40
 #' grid <- seq(0, 1, length.out = m)
-#' bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(length(g)-1, sd = sqrt(d)))) }
-#' X  <- t(replicate(n, bm(grid)))
+#' bm <- function(g) {
+#'   d <- diff(g)[1]
+#'   c(0, cumsum(rnorm(length(g) - 1, sd = sqrt(d))))
+#' }
+#' X <- t(replicate(n, bm(grid)))
 #'
 #' # MNAR censoring: observed only if -1 < X(t) < 2
 #' O <- 1L * (X > -1 & X < 2)
@@ -424,7 +442,7 @@ NULL
 #' res_L2 <- asym_mean_L2_test(
 #'   X = X,
 #'   n_sim = 2000,
-#'   seed  = 123
+#'   seed = 123
 #' )
 #' res_L2$p.value
 #' @export
@@ -437,48 +455,51 @@ asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio
   group_A <- prep$group_A
   grid <- prep$grid
   n <- nrow(X)
-  
+
   subdomain <- .limit_subdomain(O, group_A, min_frac = min_frac)
   idx <- subdomain$idx
   subgrid <- grid[idx]
-  X_sub  <- X[, idx, drop = FALSE]
+  X_sub <- X[, idx, drop = FALSE]
   O_sub <- O[, idx, drop = FALSE]
-  
+
   est <- .group_mean_estimators(X_sub, O_sub, group_A)
   mean_A <- est$mean_A
   mean_B <- est$mean_B
   mean_diff <- mean_A - mean_B
-  
-  mean_A_tfd  <- tf::tfd(matrix(mean_A,  nrow = 1), arg = subgrid)
-  mean_B_tfd  <- tf::tfd(matrix(mean_B,  nrow = 1), arg = subgrid)
+
+  mean_A_tfd <- tf::tfd(matrix(mean_A, nrow = 1), arg = subgrid)
+  mean_B_tfd <- tf::tfd(matrix(mean_B, nrow = 1), arg = subgrid)
   mean_diff_tfd <- tf::tfd(matrix(mean_diff, nrow = 1), arg = subgrid)
-  
+
   T_L2 <- n * tf::tf_integrate(mean_diff_tfd^2, arg = subgrid)
-  
-  cov_matrix  <- .covariance_estimator(X_sub, O_sub, group_A, mean_A, mean_B, est$pA, est$pB)
+
+  cov_matrix <- .covariance_estimator(X_sub, O_sub, group_A, mean_A, mean_B, est$pA, est$pB)
   KL_decomp <- .kl_decomposition(cov_matrix, subgrid)
   eigenvalues <- KL_decomp$eigenvalues
-  
+
   if (!is.null(seed)) set.seed(seed)
   cum_var <- cumsum(eigenvalues) / sum(eigenvalues)
   q <- which(cum_var >= fve)[1]
   q <- max(1L, q)
   eigenvalues_fve <- eigenvalues[seq_len(q)]
-  
+
   Z <- matrix(rnorm(q * n_sim), nrow = q)
   sim_stats <- colSums((Z^2) * eigenvalues_fve)
-  
+
   p_value <- (sum(sim_stats >= T_L2) + 1) / (length(sim_stats) + 1)
-  
+
   data_name <- if (!is.null(fd)) "fd" else "X"
-  
+
   output <- .create_output(paste0("T_\u03bc,L\u00B2"), T_L2, p_value,
-                           "L2 test",
-                           data_name,
-                           estimate = list(mean_A  = mean_A_tfd,
-                                           mean_B  = mean_B_tfd,
-                                           mean_diff = mean_diff_tfd),
-                           parameter = c(q = q, n_sim = n_sim))
+    "L2 test",
+    data_name,
+    estimate = list(
+      mean_A = mean_A_tfd,
+      mean_B = mean_B_tfd,
+      mean_diff = mean_diff_tfd
+    ),
+    parameter = c(q = q, n_sim = n_sim)
+  )
   output
 }
 
@@ -498,10 +519,14 @@ asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio
 #' @return `htest` (with extras) or a light band list.
 #' @examples
 #' set.seed(1)
-#' m <- 50; n <- 40
+#' m <- 50
+#' n <- 40
 #' grid <- seq(0, 1, length.out = m)
-#' bm <- function(g) { d <- diff(g)[1]; c(0, cumsum(rnorm(length(g)-1, sd = sqrt(d)))) }
-#' X  <- t(replicate(n, bm(grid)))
+#' bm <- function(g) {
+#'   d <- diff(g)[1]
+#'   c(0, cumsum(rnorm(length(g) - 1, sd = sqrt(d))))
+#' }
+#' X <- t(replicate(n, bm(grid)))
 #'
 #' # MNAR censoring: observed only if -1 < X(t) < 2
 #' O <- 1L * (X > -1 & X < 2)
@@ -518,9 +543,11 @@ asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio
 #'
 #' # Quick plot: mean difference + 95% simultaneous band
 #' diff_hat <- tf::tf_evaluate(res_sup$estimate$mean_diff, arg = res_sup$bands$grid)[[1]]
-#' plot(res_sup$bands$grid, diff_hat, type = "l",
-#'      ylim = range(c(res_sup$bands$lower, res_sup$bands$upper)),
-#'      xlab = "t", ylab = "mean difference")
+#' plot(res_sup$bands$grid, diff_hat,
+#'   type = "l",
+#'   ylim = range(c(res_sup$bands$lower, res_sup$bands$upper)),
+#'   xlab = "t", ylab = "mean difference"
+#' )
 #' abline(h = 0, lty = 3)
 #' lines(res_sup$bands$grid, res_sup$bands$lower, lty = 2)
 #' lines(res_sup$bands$grid, res_sup$bands$upper, lty = 2)
@@ -535,69 +562,74 @@ asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_rati
   group_A <- prep$group_A
   grid <- prep$grid
   n <- nrow(X)
-  
+
   subdomain <- .limit_subdomain(O, group_A, min_frac = min_frac)
   idx <- subdomain$idx
   subgrid <- grid[idx]
-  X_sub  <- X[, idx, drop = FALSE]
+  X_sub <- X[, idx, drop = FALSE]
   O_sub <- O[, idx, drop = FALSE]
-  
+
   est <- .group_mean_estimators(X_sub, O_sub, group_A)
   mean_A <- est$mean_A
   mean_B <- est$mean_B
   mean_diff <- mean_A - mean_B
-  
-  mean_A_tfd  <- tf::tfd(matrix(mean_A,  nrow = 1), arg = subgrid)
-  mean_B_tfd  <- tf::tfd(matrix(mean_B,  nrow = 1), arg = subgrid)
+
+  mean_A_tfd <- tf::tfd(matrix(mean_A, nrow = 1), arg = subgrid)
+  mean_B_tfd <- tf::tfd(matrix(mean_B, nrow = 1), arg = subgrid)
   mean_diff_tfd <- tf::tfd(matrix(mean_diff, nrow = 1), arg = subgrid)
-  
+
   T_D <- sqrt(n) * max(abs(mean_diff))
-  
-  cov_matrix  <- .covariance_estimator(X_sub, O_sub, group_A, mean_A, mean_B, est$pA, est$pB)
+
+  cov_matrix <- .covariance_estimator(X_sub, O_sub, group_A, mean_A, mean_B, est$pA, est$pB)
   KL_decomp <- .kl_decomposition(cov_matrix, subgrid)
   eigenvalues <- KL_decomp$eigenvalues
   eigenfunctions <- KL_decomp$eigenfunctions
-  
+
   if (!is.null(seed)) set.seed(seed)
   cum_var <- cumsum(eigenvalues) / sum(eigenvalues)
   q <- which(cum_var >= fve)[1]
   q <- max(1L, q)
   eigenvalues_fve <- eigenvalues[seq_len(q)]
   eigenfunctions_fve <- eigenfunctions[, seq_len(q), drop = FALSE]
-  A <- sweep(eigenfunctions_fve, 2, sqrt(eigenvalues_fve), "*")  
-  
-  Z <- matrix(rnorm(q * n_sim), nrow = q)     
-  gp_vals <- A %*% Z                      
+  A <- sweep(eigenfunctions_fve, 2, sqrt(eigenvalues_fve), "*")
+
+  Z <- matrix(rnorm(q * n_sim), nrow = q)
+  gp_vals <- A %*% Z
   sim_stats <- apply(abs(gp_vals), 2, max)
-  
+
   p_value <- (sum(sim_stats >= T_D) + 1) / (length(sim_stats) + 1)
-  
+
   if (isTRUE(compute_bands)) {
     bands <- .confidence_bands("D", mean_diff, sim_stats, n, alpha, subgrid)
   } else {
     bands <- list(lower = NULL, upper = NULL, band = NULL)
   }
-  
+
   data_name <- if (!is.null(fd)) "fd" else "X"
-  
+
   if (isTRUE(bands_only)) {
     return(list(
-      estimate = list(mean_A = mean_A_tfd,
-                      mean_B = mean_B_tfd,
-                      mean_diff = mean_diff_tfd),
+      estimate = list(
+        mean_A = mean_A_tfd,
+        mean_B = mean_B_tfd,
+        mean_diff = mean_diff_tfd
+      ),
       parameter = c(q = q, n_sim = n_sim),
-      bands    = bands
+      bands = bands
     ))
   }
-  
+
   output <- .create_output(paste0("T_\u03bc,D"), T_D, p_value,
-                           "Supremum test",
-                           data_name,
-                           estimate = list(mean_A  = mean_A_tfd,
-                                           mean_B  = mean_B_tfd,
-                                           mean_diff = mean_diff_tfd),
-                           parameter = c(q = q, n_sim=n_sim),
-                           bands = bands)
+    "Supremum test",
+    data_name,
+    estimate = list(
+      mean_A = mean_A_tfd,
+      mean_B = mean_B_tfd,
+      mean_diff = mean_diff_tfd
+    ),
+    parameter = c(q = q, n_sim = n_sim),
+    bands = bands
+  )
   output
 }
 
@@ -606,7 +638,8 @@ asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_rati
 #' Returns bootstrap p-values for L2 or Supremum.
 #'
 #' @inheritParams mcar_common-params
-#' @param n_boot Number of bootstrap iterations.
+#' @param n_boot Target number of bootstrap iterations.
+#' @param max_redraws Maximum number of redraw attempts for invalid bootstrap samples.
 #' @param alpha Significance level for bands (Supremum only).
 #' @param ncpus Number of workers for an internal cluster (if created).
 #' @param seed RNG seed (passed to doRNG).
@@ -619,35 +652,39 @@ asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_rati
 #' @return `htest` (with extras) or a list of both tests.
 #' @examples
 #' set.seed(1)
-#' m <- 30; n <- 200
+#' m <- 30
+#' n <- 200
 #' grid <- seq(0, 1, length.out = m)
-#' bm <- function(g){ d <- diff(g)[1]; c(0, cumsum(rnorm(length(g)-1, sd = sqrt(d)))) }
+#' bm <- function(g) {
+#'   d <- diff(g)[1]
+#'   c(0, cumsum(rnorm(length(g) - 1, sd = sqrt(d))))
+#' }
 #'
 #' # Group A: standard BM; Group B: BM with mean shift
-#' X_A <- t(replicate(n/2, bm(grid)))
-#' X_B <- t(replicate(n/2, bm(grid))) + 0.3
+#' X_A <- t(replicate(n / 2, bm(grid)))
+#' X_B <- t(replicate(n / 2, bm(grid))) + 0.3
 #' X <- rbind(X_A, X_B)
 #'
 #' # Define groups: FALSE = A, TRUE = B
-#' groups <- c(rep(FALSE, n/2), rep(TRUE, n/2))
+#' groups <- c(rep(FALSE, n / 2), rep(TRUE, n / 2))
 #'
 #' # MNAR censoring: observed only if -1 < X(t) < 2
 #' O <- 1L * (X > -1 & X < 2)
-#' X <- X; X[O == 0L] <- NA_real_
+#' X[O == 0L] <- NA_real_
 #'
 #' # Bootstrap Supremum test
 #' res_boot <- boot_mean_test(
-#'   X   = X,
-#'   groups  = groups,
-#'   n_boot  = 2000,   
-#'   stat    = "D",       
-#'   alpha   = 0.05,
+#'   X = X,
+#'   groups = groups,
+#'   n_boot = 2000,
+#'   stat = "D",
+#'   alpha = 0.05,
 #'   compute_bands = TRUE,
 #'   manage_backend = "sequential",
-#'   seed    = 1
+#'   seed = 1
 #' )
 #'
-#' res_boot$p.value 
+#' res_boot$p.value
 #' @export
 boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 1,
                            n_boot = 10000,
@@ -659,53 +696,53 @@ boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 
                            chunk_size = NULL,
                            manage_backend = "auto",
                            worker_blas_threads = 1L,
-                           bands_only = FALSE) {
-  
+                           bands_only = FALSE,
+                           max_redraws = 20L) {
   checkmate::assert_character(stat, any.missing = FALSE, min.len = 1)
-  checkmate::assert_subset(stat, c("L2","D"), empty.ok = FALSE)
+  checkmate::assert_subset(stat, c("L2", "D"), empty.ok = FALSE)
   stat <- unique(stat)
-  checkmate::assert_choice(manage_backend, c("auto","force_pool","sequential"))
-  
+  checkmate::assert_choice(manage_backend, c("auto", "force_pool", "sequential"))
+
   prep <- .prepare_inputs(fd, X, groups, observed_ratio)
   X <- prep$X
   O <- prep$O
   group_A <- prep$group_A
   grid <- prep$grid
   n <- nrow(X)
-  
+
   subdomain <- .limit_subdomain(O, group_A, min_frac = min_frac)
   idx <- subdomain$idx
-  subgrid   <- grid[idx]
-  X_sub   <- X[, idx, drop = FALSE]
-  O_sub   <- O[, idx, drop = FALSE]
-  
-  est  <- .group_mean_estimators(X_sub, O_sub, group_A)
-  mean_A  <- est$mean_A
+  subgrid <- grid[idx]
+  X_sub <- X[, idx, drop = FALSE]
+  O_sub <- O[, idx, drop = FALSE]
+
+  est <- .group_mean_estimators(X_sub, O_sub, group_A)
+  mean_A <- est$mean_A
   mean_B <- est$mean_B
   mean_diff <- mean_A - mean_B
-  
-  mean_A_tfd  <- tf::tfd(matrix(mean_A, 1), arg = subgrid)
-  mean_B_tfd  <- tf::tfd(matrix(mean_B, 1), arg = subgrid)
+
+  mean_A_tfd <- tf::tfd(matrix(mean_A, 1), arg = subgrid)
+  mean_B_tfd <- tf::tfd(matrix(mean_B, 1), arg = subgrid)
   mean_diff_tfd <- tf::tfd(matrix(mean_diff, 1), arg = subgrid)
-  
+
   w <- .trapezoid_weights(subgrid)
-  
+
   T_L2 <- if ("L2" %in% stat) n * sum((mean_diff^2) * w) else NULL
-  T_D  <- if ("D"  %in% stat) sqrt(n) * max(abs(mean_diff)) else NULL
+  T_D <- if ("D" %in% stat) sqrt(n) * max(abs(mean_diff)) else NULL
   T_vals <- list(L2 = T_L2, D = T_D)
-  
+
   IA <- as.numeric(group_A)
   IB <- 1 - IA
   X_cent <- X_sub
-  X_cent[IA == 1, ] <- sweep(X_sub[IA == 1,,drop=FALSE], 2, mean_A, `-`)
-  X_cent[IB == 1, ] <- sweep(X_sub[IB == 1,,drop=FALSE], 2, mean_B, `-`)
-  
+  X_cent[IA == 1, ] <- sweep(X_sub[IA == 1, , drop = FALSE], 2, mean_A, `-`)
+  X_cent[IB == 1, ] <- sweep(X_sub[IB == 1, , drop = FALSE], 2, mean_B, `-`)
+
   if (!is.null(seed)) set.seed(seed)
-  
+
   .run_boot <- function(manage_backend_mode = manage_backend, ncpus_eff = ncpus) {
     be <- .init_parallel(manage_backend_mode, ncpus_eff, worker_blas_threads, seed)
     nworkers <- be$nworkers
-    
+
     cs <- chunk_size
     if (is.null(cs) || !is.finite(cs) || cs < 1L) {
       if (nworkers == 0L) {
@@ -715,107 +752,147 @@ boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 
     } else {
       cs <- as.integer(cs)
     }
-    
+
     idx_chunks <- split(seq_len(n_boot), ceiling(seq_len(n_boot) / cs))
     chunk_idx <- NULL
-    
+
     boot_list <- foreach::foreach(
       chunk_idx = idx_chunks,
       .inorder = FALSE,
-      .export = c("stat","n","w","group_A","O_sub","X_cent")
+      .export = c(
+        "stat", "n", "w", "group_A", "O_sub", "X_cent",
+        "max_redraws"
+      )
     ) %dorng% {
-      res   <- matrix(NA_real_, nrow = length(chunk_idx), ncol = length(stat))
+      res <- matrix(NA_real_, nrow = length(chunk_idx), ncol = length(stat))
       colnames(res) <- stat
       diffs <- matrix(NA_real_, nrow = length(chunk_idx), ncol = ncol(X_cent))
-      
-      for (ii in seq_along(chunk_idx)) {
+
+      for (i in seq_along(chunk_idx)) {
         redraws <- 0
-        repeat {
+        draw_successful <- FALSE
+
+        while (!draw_successful && redraws <= max_redraws) {
           samp <- sample.int(n, n, replace = TRUE)
-          gA   <- group_A[samp]
-          IA   <- as.numeric(gA)
-          IB   <- 1 - IA
-          
+          gA <- group_A[samp]
+          IA <- as.numeric(gA)
+          IB <- 1 - IA
+
           OA <- O_sub[samp, , drop = FALSE] * IA
           OB <- O_sub[samp, , drop = FALSE] * IB
-          
+
           if (any(colSums(OA) == 0) || any(colSums(OB) == 0)) {
             redraws <- redraws + 1
-            if (redraws > 100) {
-              stop("Too many redraws (>100) in bootstrap: check subdomain or groups.")
-            }
-            next  
+            next
           }
-          
+
           Xs <- X_cent[samp, , drop = FALSE]
           denomA <- colSums(OA)
           denomB <- colSums(OB)
-          
+
           mean_A_boot <- colSums(replace(Xs * IA, is.na(Xs), 0)) / denomA
           mean_B_boot <- colSums(replace(Xs * IB, is.na(Xs), 0)) / denomB
-          
-          diff_boot  <- mean_A_boot - mean_B_boot
-          diffs[ii, ] <- diff_boot
-          
-          if ("L2" %in% stat)
-            res[ii, "L2"] <- n * sum((diff_boot ^ 2) * w)
-          if ("D" %in% stat)
-            res[ii, "D"]  <- sqrt(n) * max(abs(diff_boot))
-          
-          break  
+
+          diff_boot <- mean_A_boot - mean_B_boot
+          diffs[i, ] <- diff_boot
+
+          if ("L2" %in% stat) {
+            res[i, "L2"] <- n * sum((diff_boot^2) * w)
+          }
+          if ("D" %in% stat) {
+            res[i, "D"] <- sqrt(n) * max(abs(diff_boot))
+          }
+
+          draw_successful <- TRUE
+        }
+
+        if (!draw_successful) {
+          warning(sprintf(
+            "Max redraws (%d) exceeded in one bootstrap replicate, skipping.",
+            max_redraws
+          ))
         }
       }
       list(stats = res, diffs = diffs)
     }
-    
-    boot_mat   <- do.call(rbind, lapply(boot_list, `[[`, "stats"))
+
+    boot_mat <- do.call(rbind, lapply(boot_list, `[[`, "stats"))
     boot_diffs <- do.call(rbind, lapply(boot_list, `[[`, "diffs"))
-    
+
     list(boot_mat = boot_mat, boot_diffs = boot_diffs)
   }
-  
+
   boot_res <- tryCatch(
     .run_boot(manage_backend, ncpus),
-    interrupt = function(e) { .reset_backend(); stop("Aborted by user: backend cleaned up; re-execution is immediately possible.", call.=FALSE) },
-    error     = function(e) { .reset_backend(); stop(e) }
+    interrupt = function(e) {
+      .reset_backend()
+      stop("Aborted by user: backend cleaned up; re-execution is immediately possible.", call. = FALSE)
+    },
+    error = function(e) {
+      .reset_backend()
+      stop(e)
+    }
   )
-  
-  boot_mat   <- boot_res$boot_mat
+
+  boot_mat <- boot_res$boot_mat
   boot_diffs <- boot_res$boot_diffs
-  
+
+  valid_idx <- rowSums(!is.na(boot_mat)) > 0
+  n_valid <- sum(valid_idx)
+
+  n_required <- ceiling(500 / alpha)
+
+  if (n_valid < 0.8 * n_required) {
+    warning(sprintf(
+      "Only %d valid bootstrap replicates (< 80%% of required %d for alpha=%.3f). Results may not provide enough samples to reliably estimate distributional quantiles.",
+      n_valid, n_required, alpha
+    ), call. = FALSE)
+  }
+
   outputs <- lapply(stat, function(s) {
-    boot_vals <- boot_mat[, s]
-    T_val     <- T_vals[[s]]
+    boot_vals <- boot_mat[valid_idx, s]
+    T_val <- T_vals[[s]]
     bands <- NULL
     if (s == "D" && compute_bands) {
       bands <- .confidence_bands("D", mean_diff, boot_vals, n, alpha, subgrid)
     }
-    
+
     if (isTRUE(bands_only)) {
       return(list(
-        estimate  = list(mean_A = tf::tfd(matrix(est$mean_A,1), arg=subgrid),
-                         mean_B = tf::tfd(matrix(est$mean_B,1), arg=subgrid),
-                         mean_diff = mean_diff_tfd),
-        parameter = c(n_boot = n_boot),
-        bands     = bands
+        estimate = list(
+          mean_A = tf::tfd(matrix(est$mean_A, 1), arg = subgrid),
+          mean_B = tf::tfd(matrix(est$mean_B, 1), arg = subgrid),
+          mean_diff = mean_diff_tfd
+        ),
+        parameter = c(n_boot = n_valid),
+        bands = bands
       ))
     }
-    
+
     .create_output(
-      stat_name  = switch(s, L2="T_\u03bc,L\u00B2", D="T_\u03bc,D"),
+      stat_name = switch(s,
+        L2 = "T_\u03bc,L\u00B2",
+        D = "T_\u03bc,D"
+      ),
       stat_value = T_val,
-      p_value    = (sum(boot_vals >= T_val)+1)/(length(boot_vals)+1),
-      method     = switch(s, L2="Bootstrap mean test (L\u00B2)", D="Bootstrap mean test (Supremum)"),
-      data_name  = if (!is.null(fd)) "fd" else "X",
-      estimate   = list(mean_A=tf::tfd(matrix(est$mean_A,1), arg=subgrid),
-                        mean_B=tf::tfd(matrix(est$mean_B,1), arg=subgrid),
-                        mean_diff=mean_diff_tfd),
-      parameter  = c(n_boot=n_boot),
-      bands      = bands
+      p_value = (sum(boot_vals >= T_val) + 1) / (length(boot_vals) + 1),
+      method = switch(s,
+        L2 = "Bootstrap mean test (L\u00B2)",
+        D = "Bootstrap mean test (Supremum)"
+      ),
+      data_name = if (!is.null(fd)) "fd" else "X",
+      estimate = list(
+        mean_A = tf::tfd(matrix(est$mean_A, 1), arg = subgrid),
+        mean_B = tf::tfd(matrix(est$mean_B, 1), arg = subgrid),
+        mean_diff = mean_diff_tfd
+      ),
+      parameter = c(n_boot = n_valid),
+      bands = bands
     )
   })
-  
-  
-  if (length(outputs) == 1) return(outputs[[1]])
+
+  if (length(outputs) == 1) {
+    return(outputs[[1]])
+  }
   outputs
 }
