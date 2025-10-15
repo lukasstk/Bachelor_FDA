@@ -7,7 +7,7 @@
   try(doRNG::registerDoRNG(NULL), silent = TRUE)
 
   # Stop implicit cluster
-  suppressWarnings(try(doParallel::stopImplicitCluster(), silent = TRUE))
+  try(doParallel::stopImplicitCluster(), silent = TRUE)
 
   # Stop own pool
   if (exists("cl", envir = .tfu_par_env, inherits = FALSE)) {

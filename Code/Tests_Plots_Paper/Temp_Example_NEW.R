@@ -72,15 +72,14 @@ set.seed(2025)
 res_L2 <- boot_mean_test(
   fd = fd, observed_ratio = 1, min_frac = 0.10,
   n_boot = 10000, alpha = 0.05, stat = "L2",
-  compute_bands = FALSE, return_boot = FALSE
+  compute_bands = FALSE
 )
 
 # (B) Supremums-/D-Test MIT Bootstrap-Bändern (Konfidenzbänder via Bootstrap)
 res_sup <- boot_mean_test(
   fd = fd, observed_ratio = 1, min_frac = 0.10,
   n_boot = 10000, alpha = 0.05, stat = "D",
-  compute_bands = TRUE,    # <-- Bänder per Bootstrap
-  return_boot = FALSE
+  compute_bands = TRUE
 )
 
 # ===================== 4) Ergebnisse ===========================================
@@ -205,13 +204,13 @@ Figure_6_temp_data <- p_left + plot_spacer() + p_right +
   plot_layout(widths = c(1, 0.1, 1))
 
 # Abspeichern
-ggsave(
-  filename = "Plots/Figure_6_temp_data.png",
-  plot     = Figure_6_temp_data,
-  width    = 10,
-  height   = 4,
-  dpi      = 300
-)
+# ggsave(
+#   filename = "Plots/Figure_6_temp_data.png",
+#   plot     = Figure_6_temp_data,
+#   width    = 10,
+#   height   = 4,
+#   dpi      = 300
+# )
 
 
 # ==== Figure-7-Style (Bootstrap-p-Werte über m) – FIX: Gruppen manuell/fix ====
@@ -313,11 +312,11 @@ Figure_7 <- ggplot(df_p, aes(x = m, y = p, shape = test, color = test)) +
 print(Figure_7)
 
 # Speichern
-ggsave(
-  filename = "Plots/Figure_7.png",
-  plot     = Figure_7,
-  width    = 10,
-  height   = 5,
-  dpi      = 300
-)
+# ggsave(
+#   filename = "Plots/Figure_7.png",
+#   plot     = Figure_7,
+#   width    = 10,
+#   height   = 5,
+#   dpi      = 300
+# )
 

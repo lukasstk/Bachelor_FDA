@@ -20,6 +20,7 @@ set.seed(42)
 # ---------------- Parameter ----------------
 n            <- 100                    # Anzahl Pfade
 grid_spacing <- 100
+alpha    <- 0.05
 grid         <- seq(0, 1, length.out = grid_spacing)
 ids          <- paste0("ID", seq_len(n))
 mechanism    <- "MNAR"                 # "MCAR" oder "MNAR"
@@ -248,14 +249,14 @@ p_right <- ggplot(bands, aes(t, diff)) +
 Figure_5 <- p_left + plot_spacer() + p_right +
   plot_layout(widths = c(1, 0.1, 1))
 
-# Abspeichern
-ggsave(
-  filename = "Plots/Figure_5.png",
-  plot     = Figure_5,
-  width    = 10,
-  height   = 4,
-  dpi      = 300
-)
+# # Abspeichern
+# ggsave(
+#   filename = "Plots/Figure_5.png",
+#   plot     = Figure_5,
+#   width    = 10,
+#   height   = 4,
+#   dpi      = 300
+# )
 
 
 
@@ -389,12 +390,12 @@ Figure_4 <- ggplot(rejection_proba, aes(x = b, y = rej, shape = test, color = te
 
 
 
-ggsave(
-  filename = "Plots/Figure_4.png",
-  plot     = Figure_4,
-  width    = 10,    
-  height   = 5,
-  dpi      = 300
-)
+# ggsave(
+#   filename = "Plots/Figure_4.png",
+#   plot     = Figure_4,
+#   width    = 10,    
+#   height   = 5,
+#   dpi      = 300
+# )
 
 

@@ -64,6 +64,7 @@ boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 
                            bands_only = FALSE,
                            max_redraws = 20L) {
   checkmate::assert_character(stat, any.missing = FALSE, min.len = 1)
+  checkmate::assert_int(chunk_size, lower = 1, null.ok = TRUE)
   checkmate::assert_subset(stat, c("L2", "D"), empty.ok = FALSE)
   stat <- unique(stat)
   checkmate::assert_choice(manage_backend, c("auto", "force_pool", "sequential"))
@@ -109,11 +110,8 @@ boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 
     nworkers <- be$nworkers
 
     cs <- chunk_size
-    if (is.null(cs) || !is.finite(cs) || cs < 1L) {
-      if (nworkers == 0L) {
-        warning("No parallel backend detected \u2192 running sequentially.")
-      }
-      cs <- max(50L, ceiling(n_boot / (3L * max(1L, nworkers))))
+    if (is.null(cs)) {
+      cs <- max(50L, ceiling(n_boot / (3L * nworkers)))
     } else {
       cs <- as.integer(cs)
     }
@@ -155,8 +153,8 @@ boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 
           denomA <- colSums(OA)
           denomB <- colSums(OB)
 
-          mean_A_boot <- colSums(replace(Xs * IA, is.na(Xs), 0)) / denomA
-          mean_B_boot <- colSums(replace(Xs * IB, is.na(Xs), 0)) / denomB
+          mean_A_boot <- colSums(Xs * OA * IA, na.rm = TRUE) / denomA
+          mean_B_boot <- colSums(Xs * OB * IB, na.rm = TRUE) / denomB
 
           diff_boot <- mean_A_boot - mean_B_boot
           diffs[i, ] <- diff_boot

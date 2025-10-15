@@ -1,17 +1,25 @@
 #' Trapezoidal integration weights
 #' @keywords internal
 #' @noRd
-.trapezoid_weights <- function(x) {
-  checkmate::assert_numeric(x, any.missing = FALSE, min.len = 1, sorted = TRUE)
-
-  m <- length(x)
-  if (m == 1L) {
+.trapezoid_weights <- function(grid) {
+  checkmate::assert_numeric(grid, any.missing = FALSE, min.len = 1, sorted = TRUE)
+  
+  n_points <- length(grid)
+  if (n_points == 1L) {
     return(1)
   }
-  w <- numeric(m)
-  w[1] <- (x[2] - x[1]) / 2
-  w[m] <- (x[m] - x[m - 1]) / 2
-  if (m > 2L) w[2:(m - 1)] <- (x[3:m] - x[1:(m - 2)]) / 2
+  
+  # initialize weights
+  w <- numeric(n_points)
+  
+  # boundary weights
+  w[1] <- (grid[2] - grid[1]) / 2
+  w[n_points] <- (grid[n_points] - grid[n_points - 1]) / 2
+  
+  # interior weights
+  if (n_points > 2L)
+    w[2:(n_points - 1)] <- (grid[3:n_points] - grid[1:(n_points - 2)]) / 2
+  
   w
 }
 
@@ -25,24 +33,24 @@
   IB <- 1 - IA
   pA_hat <- colSums(O * IA) / n
   pB_hat <- colSums(O * IB) / n
-  mean_A_hat <- colSums(X * IA, na.rm = TRUE) / (n * pA_hat)
-  mean_B_hat <- colSums(X * IB, na.rm = TRUE) / (n * pB_hat)
+  mean_A_hat <- colSums(X * O * IA, na.rm = TRUE) / (n * pA_hat)
+  mean_B_hat <- colSums(X * O * IB, na.rm = TRUE) / (n * pB_hat)
   list(mean_A = mean_A_hat, mean_B = mean_B_hat, pA = pA_hat, pB = pB_hat)
 }
 
 #' Corrected covariance under partial observation
 #' @keywords internal
 #' @noRd
-.covariance_estimator <- function(X, O, group_A, muA_hat, muB_hat, pA_hat, pB_hat) {
+.covariance_estimator <- function(X, O, group_A, mean_A, mean_B, pA, pB) {
   n <- nrow(X)
   IA <- as.numeric(group_A)
   IB <- 1 - IA
-  Xtilde <- X
-  Xtilde[group_A, ] <- sweep(X[group_A, , drop = FALSE], 2, muA_hat, `-`)
-  Xtilde[!group_A, ] <- sweep(X[!group_A, , drop = FALSE], 2, muB_hat, `-`)
-  Xtilde[is.na(Xtilde)] <- 0
-  A_resid <- sweep((Xtilde * O) * IA, 2, pA_hat, "/")
-  B_resid <- sweep((Xtilde * O) * IB, 2, pB_hat, "/")
+  X_centered <- X
+  X_centered[group_A, ] <- sweep(X[group_A, , drop = FALSE], 2, mean_A, `-`)
+  X_centered[!group_A, ] <- sweep(X[!group_A, , drop = FALSE], 2, mean_B, `-`)
+  X_centered[is.na(X_centered)] <- 0
+  A_resid <- sweep((X_centered * O) * IA, 2, pA, "/")
+  B_resid <- sweep((X_centered * O) * IB, 2, pB, "/")
   K_hat <- (crossprod(A_resid) + crossprod(B_resid)) / n
   (K_hat + t(K_hat)) / 2
 }
@@ -55,15 +63,14 @@
   sw <- sqrt(w)
   S <- (sw %o% sw) * K
   S <- (S + t(S)) / 2
-  ev_test <- eigen(S, symmetric = TRUE, only.values = TRUE)$values
-  if (any(ev_test < -tol * max(1, abs(ev_test[1])))) {
-    stop(sprintf("Weighted covariance is not PSD (min eigenvalue = %.4g).", min(ev_test)), call. = FALSE)
-  }
   ev <- eigen(S, symmetric = TRUE)
+  if (any(ev$values < -tol * max(1, abs(ev$values[1])))) {
+    stop(sprintf("Weighted covariance not PSD (min eigenvalue = %.4g).",
+                 min(ev$values)), call. = FALSE)
+  }
   eigenvalues <- ev$values
+  eigenvalues[eigenvalues < 0] <- 0
   eigenfunctions <- sweep(ev$vectors, 1, sw, "/")
-  norms <- sqrt(colSums(eigenfunctions^2 * w))
-  eigenfunctions <- sweep(eigenfunctions, 2, norms, "/")
   list(eigenvalues = eigenvalues, eigenfunctions = eigenfunctions, w = w)
 }
 
@@ -72,19 +79,22 @@
 #' @keywords internal
 #' @noRd
 .confidence_bands <- function(stat, diff, W, n, alpha, grid) {
-  if (identical(stat, "D")) {
-    q_alpha <- as.numeric(stats::quantile(W, probs = 1 - alpha, names = FALSE, na.rm = TRUE))
-    halfwidth <- q_alpha / sqrt(n)
-    lower <- diff - halfwidth
-    upper <- diff + halfwidth
-    band <- tf::tfd(matrix(c(lower, upper), nrow = 2, byrow = TRUE), arg = grid)
-    return(list(
-      type = "simultaneous", band = band,
-      lower = lower, upper = upper, alpha = alpha, grid = grid
-    ))
-  }
+  checkmate::assert_choice(stat, choices = "D", .var.name = "stat")
+  q_alpha <- as.numeric(stats::quantile(W, probs = 1 - alpha, names = FALSE, na.rm = TRUE))
+  halfwidth <- q_alpha / sqrt(n)
+  lower <- diff - halfwidth
+  upper <- diff + halfwidth
+  band <- tf::tfd(matrix(c(lower, upper), nrow = 2, byrow = TRUE), arg = grid)
+  
+  list(
+    type = "simultaneous",
+    band = band,
+    lower = lower,
+    upper = upper,
+    alpha = alpha,
+    grid = grid
+  )
 
-  stop("Unknown stat type in .confidence_bands(): must be 'D'.")
 }
 
 

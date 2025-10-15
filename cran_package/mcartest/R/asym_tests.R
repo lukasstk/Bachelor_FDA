@@ -65,7 +65,6 @@ asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio
   if (!is.null(seed)) set.seed(seed)
   cum_var <- cumsum(eigenvalues) / sum(eigenvalues)
   q <- which(cum_var >= fve)[1]
-  q <- max(1L, q)
   eigenvalues_fve <- eigenvalues[seq_len(q)]
 
   Z <- matrix(rnorm(q * n_sim), nrow = q)
@@ -75,16 +74,18 @@ asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio
 
   data_name <- if (!is.null(fd)) "fd" else "X"
 
-  output <- .create_output(paste0("T_\u03bc,L\u00B2"), T_L2, p_value,
-    "L2 test",
-    data_name,
-    estimate = list(
-      mean_A = mean_A_tfd,
-      mean_B = mean_B_tfd,
-      mean_diff = mean_diff_tfd
-    ),
-    parameter = c(q = q, n_sim = n_sim)
-  )
+  output <- .create_output(stat_name = paste0("T_\u03bc,L\u00B2"), 
+                           stat_value = T_L2, 
+                           p_value = p_value,
+                           method = "L2 test",
+                           data_name = data_name,
+                           estimate = list(
+                             mean_A = mean_A_tfd,
+                             mean_B = mean_B_tfd,
+                             mean_diff = mean_diff_tfd
+                             ),
+                           parameter = c(q = q, n_sim = n_sim)
+                           )
   output
 }
 
@@ -173,7 +174,6 @@ asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_rati
   if (!is.null(seed)) set.seed(seed)
   cum_var <- cumsum(eigenvalues) / sum(eigenvalues)
   q <- which(cum_var >= fve)[1]
-  q <- max(1L, q)
   eigenvalues_fve <- eigenvalues[seq_len(q)]
   eigenfunctions_fve <- eigenfunctions[, seq_len(q), drop = FALSE]
   A <- sweep(eigenfunctions_fve, 2, sqrt(eigenvalues_fve), "*")
@@ -204,16 +204,18 @@ asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_rati
     ))
   }
 
-  output <- .create_output(paste0("T_\u03bc,D"), T_D, p_value,
-    "Supremum test",
-    data_name,
-    estimate = list(
-      mean_A = mean_A_tfd,
-      mean_B = mean_B_tfd,
-      mean_diff = mean_diff_tfd
-    ),
-    parameter = c(q = q, n_sim = n_sim),
-    bands = bands
-  )
+  output <- .create_output(stat_name = paste0("T_\u03bc,D"), 
+                           stat_value = T_D,
+                           p_value = p_value,
+                           method = "Supremum test",
+                           data_name = data_name,
+                           estimate = list(
+                             mean_A = mean_A_tfd,
+                             mean_B = mean_B_tfd,
+                             mean_diff = mean_diff_tfd
+                             ),
+                           parameter = c(q = q, n_sim = n_sim),
+                           bands = bands
+                           )
   output
 }

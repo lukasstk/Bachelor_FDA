@@ -2,14 +2,14 @@
 #' @keywords internal
 #' @noRd
 .groups_to_logical <- function(groups) {
-  checkmate::assert_atomic_vector(groups, any.missing = FALSE)
-  if (is.factor(groups)) groups <- as.character(droplevels(groups))
+  checkmate::assert_atomic_vector(groups, any.missing = FALSE, .var.name = "groups")
 
-  # Sicherstellen: genau 2 verschiedene Gruppen
-  checkmate::assert(
-    length(unique(groups)) == 2,
-    .var.name = "groups"
-  )
+  if (is.factor(groups)) groups <- as.character(droplevels(groups))
+  
+  if (length(unique(groups)) != 2) {
+    stop("Assertion on 'groups' failed: Must contain exactly two distinct 
+         values (one for each group).", call. = FALSE)
+  }
 
   if (is.logical(groups)) {
     return(groups)
@@ -18,16 +18,18 @@
     return(groups == u[1])
   }
 
-  stop("`groups` must be logical/character/factor/numeric.")
 }
 
 #' Coerce `tfd` to dense matrix + grid
 #' @keywords internal
 #' @noRd
 .fd_to_matrix <- function(fd) {
-  checkmate::assert_class(fd, c("tfd", "tfd_irreg"))
+  checkmate::assert_class(fd, c("tfd"))
 
   all_grids <- tf::tf_arg(fd)
+  
+  # For irregular data ("tfd_irreg"), tf_arg(fd) returns a list of grids
+  # (one per curve); for regular data ("tfd_reg"), a single numeric grid vector.
   if (is.list(all_grids)) {
     g <- sort(unique(unlist(all_grids)))
   } else {
@@ -35,38 +37,49 @@
   }
 
   X_try <- suppressWarnings(as.matrix(fd))
-  checkmate::assert_matrix(X_try, mode = "numeric", min.cols = 2)
 
   list(X = X_try, grid = g)
 }
 
-#' Subdomain selector (strict + overlap fallback)
+#' Subdomain selector
+#'
+#' Selects grid points where both groups have sufficient coverage.
+#' Each retained time point satisfies:
+#' min(cA(t), cB(t)) > n * min_frac
+#' If no grid point satisfies this, an error is raised.
+#'
 #' @keywords internal
 #' @noRd
 .limit_subdomain <- function(O, group_A, min_frac = 0.10) {
   checkmate::assert_matrix(O, any.missing = FALSE)
   checkmate::assert_logical(group_A, len = nrow(O))
   checkmate::assert_number(min_frac, lower = 0, upper = 1)
-
+  
   n <- nrow(O)
   IA <- as.numeric(group_A)
   IB <- 1 - IA
+  
+  # Observed counts per grid point in each group
   cA <- colSums(O * IA)
   cB <- colSums(O * IB)
-
-  idx_strict <- which(pmin(cA, cB) > n * min_frac)
-  if (length(idx_strict) >= 2L) {
-    return(list(idx = idx_strict, min_frac_used = min_frac, fallback = NULL))
+  
+  # Select points where both groups exceed threshold
+  valid_points <- pmin(cA, cB) > n * min_frac
+  
+  # If no grid point satisfies the criterion → stop
+  if (!any(valid_points)) {
+    stop(sprintf(
+      "No suitable subdomain found: both groups must exceed %.0f%% coverage (min_frac = %.2f) at ≥ 1 grid point.",
+      100 * min_frac, min_frac
+    ), call. = FALSE)
   }
-
-  stop(
-    paste0(
-      "No suitable subdomain found: strict criterion (min_frac = ", format(min_frac),
-      ") not satisfied at >= 2 time points."
-    ),
-    call. = FALSE
-  )
+  
+  # Return indices of valid grid points
+  idx <- which(valid_points)
+  
+  list(idx = idx, min_frac_used = min_frac)
 }
+
 
 
 #' Prepare inputs from `tfd` or matrix
@@ -78,10 +91,16 @@
   if (!is.null(fd)) {
     conv <- .fd_to_matrix(fd)
     X <- conv$X
-    grid_vec <- conv$grid
+    grid <- conv$grid
   } else {
-    checkmate::assert_matrix(X, mode = "numeric", min.rows = 1, min.cols = 2)
-    grid_vec <- seq(0, 1, length.out = ncol(X))
+    checkmate::assert_matrix(
+      X,
+      mode = "numeric",
+      any.missing = TRUE,   
+      all.missing = FALSE,  
+      null.ok = FALSE       
+    )
+    grid <- seq(0, 1, length.out = ncol(X))
   }
 
   n <- nrow(X)
@@ -112,6 +131,6 @@
     X = X,
     O = O,
     group_A = as.logical(group_A),
-    grid = grid_vec
+    grid = grid
   )
 }
