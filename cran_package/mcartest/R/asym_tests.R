@@ -1,9 +1,21 @@
 #' Asymptotic L2 test for MCAR
 #'
-#' Tests \eqn{H_0:\ \mu_A=\mu_B} via \eqn{T_{\mu,L2}=n\\lVert \hat\mu_A-\hat\mu_B\\rVert^2_{L2}}.
-#' p-values are obtained from a KL-mixture; the number of components is chosen by FVE.
+#' Tests \eqn{H_0:\mu_A=\mu_B} using the statistic
+#' \deqn{T_{\mu,L^2} = n \, \lVert \hat{\mu}_A - \hat{\mu}_B \rVert^2_{L^2}.}
 #'
-#' @inheritParams mcar_common-params
+#' p-values are obtained from a Karhunen–Loève mixture;
+#' the number of components is determined by the fraction of
+#' variance explained (FVE).
+#'
+#' @param fd Optional `tfd`/`tfd_irreg` (tidyfun). If supplied,
+#' takes precedence over `X`.
+#' @param X Optional numeric matrix (n x m) with NAs (observations).
+#' @param groups Optional 2-level grouping vector of
+#' length n (logical/character/factor/numeric).
+#' @param observed_ratio Threshold in \\[0,1\\] used for
+#' auto-grouping when `groups` is missing.
+#' @param min_frac Minimum per-time-point coverage per group
+#' used to select the subdomain.
 #' @param fve Fraction of variance explained (0-1) to choose \eqn{q}.
 #' @param n_sim Number of Monte Carlo draws for the KL-mixture.
 #' @param seed RNG seed.
@@ -31,9 +43,14 @@
 #' )
 #' res_L2$p.value
 #' @export
-asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 1,
-                              fve = 0.99, n_sim = 10000,
-                              min_frac = 0.10, seed = NULL) {
+asym_mean_L2_test <- function(fd = NULL,
+                              X = NULL,
+                              groups = NULL,
+                              observed_ratio = 1,
+                              fve = 0.99,
+                              n_sim = 10000,
+                              min_frac = 0.10,
+                              seed = NULL) {
   prep <- .prepare_inputs(fd, X, groups, observed_ratio)
   X <- prep$X
   O <- prep$O
@@ -58,7 +75,8 @@ asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio
 
   T_L2 <- n * tf::tf_integrate(mean_diff_tfd^2, arg = subgrid)
 
-  cov_matrix <- .covariance_estimator(X_sub, O_sub, group_A, mean_A, mean_B, est$pA, est$pB)
+  cov_matrix <- .covariance_estimator(X_sub, O_sub, group_A,
+                                      mean_A, mean_B, est$pA, est$pB)
   KL_decomp <- .kl_decomposition(cov_matrix, subgrid)
   eigenvalues <- KL_decomp$eigenvalues
 
@@ -74,8 +92,8 @@ asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio
 
   data_name <- if (!is.null(fd)) "fd" else "X"
 
-  output <- .create_output(stat_name = paste0("T_\u03bc,L\u00B2"), 
-                           stat_value = T_L2, 
+  output <- .create_output(stat_name = paste0("T_\u03bc,L\u00B2"),
+                           stat_value = T_L2,
                            p_value = p_value,
                            method = "L2 test",
                            data_name = data_name,
@@ -92,10 +110,23 @@ asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio
 
 #' Asymptotic supremum test for MCAR (optional simultaneous bands)
 #'
-#' Tests \eqn{H_0:\ \mu_A=\mu_B} via \eqn{T_{\mu,D}=\sqrt{n}\,\lVert \hat\mu_A-\hat\mu_B\rVert_\infty}.
-#' KL-based GP approximation; with `compute_bands=TRUE` also returns simultaneous bands.
+#' Tests \eqn{H_0:\mu_A=\mu_B} using the statistic
+#' \deqn{T_{\mu,D} = \sqrt{n}\,
+#' \lVert \hat{\mu}_A - \hat{\mu}_B \rVert_{\infty}.}
 #'
-#' @inheritParams mcar_common-params
+#' The p-values are obtained from a Karhunen–Loève–based Gaussian process
+#' approximation. If `compute_bands = TRUE`, simultaneous confidence bands
+#' for the mean difference are also returned.
+#'
+#' @param fd Optional `tfd`/`tfd_irreg` (tidyfun). If supplied,
+#' takes precedence over `X`.
+#' @param X Optional numeric matrix (n x m) with NAs (observations).
+#' @param groups Optional 2-level grouping vector of
+#' length n (logical/character/factor/numeric).
+#' @param observed_ratio Threshold in \\[0,1\\] used for auto-grouping
+#' when `groups` is missing.
+#' @param min_frac Minimum per-time-point coverage per group
+#' used to select the subdomain.
 #' @param fve Fraction of variance explained (0-1) to select KL components.
 #' @param n_sim Number of Monte Carlo draws for the GP approx.
 #' @param seed RNG seed.
@@ -128,7 +159,8 @@ asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio
 #' res_sup$p.value
 #'
 #' # Quick plot: mean difference + 95% simultaneous band
-#' diff_hat <- tf::tf_evaluate(res_sup$estimate$mean_diff, arg = res_sup$bands$grid)[[1]]
+#' diff_hat <- tf::tf_evaluate(res_sup$estimate$mean_diff,
+#'                             arg = res_sup$bands$grid)[[1]]
 #' plot(res_sup$bands$grid, diff_hat,
 #'   type = "l",
 #'   ylim = range(c(res_sup$bands$lower, res_sup$bands$upper)),
@@ -138,10 +170,17 @@ asym_mean_L2_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio
 #' lines(res_sup$bands$grid, res_sup$bands$lower, lty = 2)
 #' lines(res_sup$bands$grid, res_sup$bands$upper, lty = 2)
 #' @export
-asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 1,
-                               fve = 0.99, n_sim = 10000,
-                               min_frac = 0.10, seed = NULL, alpha = 0.05,
-                               compute_bands = TRUE, bands_only = FALSE) {
+asym_mean_sup_test <- function(fd = NULL,
+                               X = NULL,
+                               groups = NULL,
+                               observed_ratio = 1,
+                               fve = 0.99,
+                               n_sim = 10000,
+                               min_frac = 0.10,
+                               seed = NULL,
+                               alpha = 0.05,
+                               compute_bands = TRUE,
+                               bands_only = FALSE) {
   prep <- .prepare_inputs(fd, X, groups, observed_ratio)
   X <- prep$X
   O <- prep$O
@@ -166,7 +205,8 @@ asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_rati
 
   T_D <- sqrt(n) * max(abs(mean_diff))
 
-  cov_matrix <- .covariance_estimator(X_sub, O_sub, group_A, mean_A, mean_B, est$pA, est$pB)
+  cov_matrix <- .covariance_estimator(X_sub, O_sub, group_A,
+                                      mean_A, mean_B, est$pA, est$pB)
   KL_decomp <- .kl_decomposition(cov_matrix, subgrid)
   eigenvalues <- KL_decomp$eigenvalues
   eigenfunctions <- KL_decomp$eigenfunctions
@@ -204,7 +244,7 @@ asym_mean_sup_test <- function(fd = NULL, X = NULL, groups = NULL, observed_rati
     ))
   }
 
-  output <- .create_output(stat_name = paste0("T_\u03bc,D"), 
+  output <- .create_output(stat_name = paste0("T_\u03bc,D"),
                            stat_value = T_D,
                            p_value = p_value,
                            method = "Supremum test",

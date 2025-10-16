@@ -48,7 +48,8 @@
   assign(".tfu_par_env", new.env(parent = emptyenv()),
     envir = parent.env(environment())
   )
-  reg.finalizer(.tfu_par_env, function(e) try(.reset_backend(), silent = TRUE), onexit = TRUE)
+  reg.finalizer(.tfu_par_env, function(e) try(.reset_backend(), silent = TRUE),
+                onexit = TRUE)
 }
 
 # # --- Manuell ausfuehren wenn noch kein package ---
@@ -74,11 +75,13 @@
 #' - Pin BLAS/OpenMP threads per worker to avoid oversubscription
 #' @keywords internal
 #' @noRd
-.init_parallel <- function(manage_backend = c("auto", "force_pool", "sequential"),
+.init_parallel <- function(manage_backend = c("auto", "force_pool",
+                                              "sequential"),
                            ncpus = parallel::detectCores(logical = TRUE),
                            worker_blas_threads = 1L,
                            seed = 42) {
-  checkmate::assert_choice(manage_backend, c("auto", "force_pool", "sequential"))
+  checkmate::assert_choice(manage_backend, c("auto", "force_pool",
+                                             "sequential"))
   checkmate::assert_int(ncpus, lower = 1)
   checkmate::assert_int(worker_blas_threads, lower = 1)
   checkmate::assert_number(seed, null.ok = TRUE)
@@ -132,5 +135,12 @@
   doParallel::registerDoParallel(cl)
   .tfu_par_env$cl <- cl
 
-  list(nworkers = ncpus, used = if (manage_backend == "force_pool") "internal-forced" else "internal-new")
+  list(
+    nworkers = ncpus,
+    used = if (manage_backend == "force_pool") {
+      "internal-forced"
+    } else {
+      "internal-new"
+    }
+  )
 }

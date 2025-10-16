@@ -2,24 +2,25 @@
 #' @keywords internal
 #' @noRd
 .trapezoid_weights <- function(grid) {
-  checkmate::assert_numeric(grid, any.missing = FALSE, min.len = 1, sorted = TRUE)
-  
+  checkmate::assert_numeric(grid, any.missing = FALSE,
+                            min.len = 1, sorted = TRUE)
+
   n_points <- length(grid)
   if (n_points == 1L) {
     return(1)
   }
-  
+
   # initialize weights
   w <- numeric(n_points)
-  
+
   # boundary weights
   w[1] <- (grid[2] - grid[1]) / 2
   w[n_points] <- (grid[n_points] - grid[n_points - 1]) / 2
-  
+
   # interior weights
   if (n_points > 2L)
     w[2:(n_points - 1)] <- (grid[3:n_points] - grid[1:(n_points - 2)]) / 2
-  
+
   w
 }
 
@@ -80,12 +81,13 @@
 #' @noRd
 .confidence_bands <- function(stat, diff, W, n, alpha, grid) {
   checkmate::assert_choice(stat, choices = "D", .var.name = "stat")
-  q_alpha <- as.numeric(stats::quantile(W, probs = 1 - alpha, names = FALSE, na.rm = TRUE))
+  q_alpha <- as.numeric(stats::quantile(W, probs = 1 - alpha,
+                                        names = FALSE, na.rm = TRUE))
   halfwidth <- q_alpha / sqrt(n)
   lower <- diff - halfwidth
   upper <- diff + halfwidth
   band <- tf::tfd(matrix(c(lower, upper), nrow = 2, byrow = TRUE), arg = grid)
-  
+
   list(
     type = "simultaneous",
     band = band,

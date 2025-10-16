@@ -2,18 +2,30 @@
 #'
 #' Returns bootstrap p-values for L2 or Supremum.
 #'
-#' @inheritParams mcar_common-params
+#' @param fd Optional `tfd`/`tfd_irreg` (tidyfun). If supplied,
+#' takes precedence over `X`.
+#' @param X Optional numeric matrix (n x m) with NAs (observations).
+#' @param groups Optional 2-level grouping vector of
+#' length n (logical/character/factor/numeric).
+#' @param observed_ratio Threshold in \\[0,1\\] used for auto-grouping
+#' when `groups` is missing.
+#' @param min_frac Minimum per-time-point coverage per group
+#' used to select the subdomain.
 #' @param n_boot Target number of bootstrap iterations.
-#' @param max_redraws Maximum number of redraw attempts for invalid bootstrap samples.
+#' @param max_redraws Maximum number of redraw attempts
+#' for invalid bootstrap samples.
 #' @param alpha Significance level for bands (Supremum only).
 #' @param ncpus Number of workers for an internal cluster (if created).
 #' @param seed RNG seed (passed to doRNG).
 #' @param stat `"L2"`, `"D"` oder `c("L2","D")`.
 #' @param compute_bands Compute confidence bands (Supremum only)?
 #' @param chunk_size Number of bootstrap replicates per foreach task.
-#' @param manage_backend Backend control (`"auto"`, `"force_pool"`, `"sequential"`).
-#' @param worker_blas_threads BLAS/OpenMP threads per worker (internal pool only).
-#' @param bands_only Logical: if TRUE, return only band information instead of a full `htest`.
+#' @param manage_backend
+#' Backend control (`"auto"`, `"force_pool"`, `"sequential"`).
+#' @param worker_blas_threads BLAS/OpenMP threads
+#' per worker (internal pool only).
+#' @param bands_only Logical: if TRUE, return only
+#' band information instead of a full `htest`.
 #' @return `htest` (with extras) or a list of both tests.
 #' @examples
 #' set.seed(1)
@@ -51,9 +63,13 @@
 #'
 #' res_boot$p.value
 #' @export
-boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 1,
+boot_mean_test <- function(fd = NULL,
+                           X = NULL,
+                           groups = NULL,
+                           observed_ratio = 1,
                            n_boot = 10000,
-                           min_frac = 0.10, alpha = 0.05,
+                           min_frac = 0.10,
+                           alpha = 0.05,
                            ncpus = parallel::detectCores(logical = TRUE),
                            seed = NULL,
                            stat = c("L2", "D"),
@@ -67,7 +83,8 @@ boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 
   checkmate::assert_int(chunk_size, lower = 1, null.ok = TRUE)
   checkmate::assert_subset(stat, c("L2", "D"), empty.ok = FALSE)
   stat <- unique(stat)
-  checkmate::assert_choice(manage_backend, c("auto", "force_pool", "sequential"))
+  checkmate::assert_choice(manage_backend, c("auto", "force_pool",
+                                             "sequential"))
 
   prep <- .prepare_inputs(fd, X, groups, observed_ratio)
   X <- prep$X
@@ -105,8 +122,10 @@ boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 
 
   if (!is.null(seed)) set.seed(seed)
 
-  .run_boot <- function(manage_backend_mode = manage_backend, ncpus_eff = ncpus) {
-    be <- .init_parallel(manage_backend_mode, ncpus_eff, worker_blas_threads, seed)
+  .run_boot <- function(manage_backend_mode = manage_backend,
+                        ncpus_eff = ncpus) {
+    be <- .init_parallel(manage_backend_mode, ncpus_eff,
+                         worker_blas_threads, seed)
     nworkers <- be$nworkers
 
     cs <- chunk_size
@@ -189,7 +208,8 @@ boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 
     .run_boot(manage_backend, ncpus),
     interrupt = function(e) {
       .reset_backend()
-      stop("Aborted by user: backend cleaned up; re-execution is immediately possible.", call. = FALSE)
+      stop("Aborted by user: backend cleaned up;
+           re-execution is immediately possible.", call. = FALSE)
     },
     error = function(e) {
       .reset_backend()
@@ -207,7 +227,9 @@ boot_mean_test <- function(fd = NULL, X = NULL, groups = NULL, observed_ratio = 
 
   if (n_valid < 0.8 * n_required) {
     warning(sprintf(
-      "Only %d valid bootstrap replicates (< 80%% of required %d for alpha=%.3f). Results may not provide enough samples to reliably estimate distributional quantiles.",
+      "Only %d valid bootstrap replicates
+      (< 80%% of required %d for alpha=%.3f). Results may not provide enough
+      samples to reliably estimate distributional quantiles.",
       n_valid, n_required, alpha
     ), call. = FALSE)
   }
