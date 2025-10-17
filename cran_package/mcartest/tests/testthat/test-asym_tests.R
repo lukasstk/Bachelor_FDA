@@ -149,6 +149,7 @@ test_that("asymptotic tests detect stronger MNAR censoring
                          min_frac = min_frac)$p.value,
       error = function(e) NA_real_
     )
+
     c(p_L2, p_D)
   }
 

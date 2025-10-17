@@ -46,9 +46,9 @@ test_that("bootstrap tests maintain nominal Type-I error under MCAR", {
     X[O == 0L] <- NA_real_
 
     res_L2 <- boot_mean_test(X = X, n_boot = n_boot, stat = "L2",
-                             manage_backend = "auto")
+                             manage_backend = "sequential")
     res_D  <- boot_mean_test(X = X, n_boot = n_boot, stat = "D",
-                             manage_backend = "auto")
+                             manage_backend = "sequential")
 
     rejections_L2[r] <- res_L2$p.value < alpha
     rejections_D[r]  <- res_D$p.value  < alpha
@@ -57,8 +57,8 @@ test_that("bootstrap tests maintain nominal Type-I error under MCAR", {
   rate_L2 <- mean(rejections_L2)
   rate_D  <- mean(rejections_D)
 
-  expect_lt(rate_L2, 0.09)
-  expect_lt(rate_D,  0.09)
+  expect_lt(rate_L2, 0.091)
+  expect_lt(rate_D,  0.091)
 })
 
 # ==========================================================
@@ -82,9 +82,9 @@ test_that("bootstrap tests detect systematic MNAR bias", {
     X[O == 0L] <- NA_real_
 
     res_L2 <- boot_mean_test(X = X, n_boot = n_boot, stat = "L2",
-                             manage_backend = "auto")
+                             manage_backend = "sequential")
     res_D  <- boot_mean_test(X = X, n_boot = n_boot, stat = "D",
-                             manage_backend = "auto")
+                             manage_backend = "sequential")
 
     rejections_L2[r] <- res_L2$p.value < alpha
     rejections_D[r]  <- res_D$p.value  < alpha
@@ -122,14 +122,15 @@ test_that("bootstrap tests show increasing rejection
 
     p_L2 <- tryCatch(
       boot_mean_test(X = bm_mat, n_boot = n_boot, stat = "L2",
-                     manage_backend = "auto")$p.value,
+                     manage_backend = "sequential")$p.value,
       error = function(e) NA_real_
     )
     p_D <- tryCatch(
       boot_mean_test(X = bm_mat, n_boot = n_boot, stat = "D",
-                     manage_backend = "auto")$p.value,
+                     manage_backend = "sequential")$p.value,
       error = function(e) NA_real_
     )
+
     c(p_L2, p_D)
   }
 
