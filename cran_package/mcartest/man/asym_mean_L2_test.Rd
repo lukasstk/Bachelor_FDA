@@ -55,7 +55,7 @@ n <- 40
 grid <- seq(0, 1, length.out = m)
 bm <- function(g) {
   d <- diff(g)[1]
-  c(0, cumsum(rnorm(length(g) - 1, sd = sqrt(d))))
+  c(0, cumsum(stats::rnorm(length(g) - 1, sd = sqrt(d))))
 }
 X <- t(replicate(n, bm(grid)))
 

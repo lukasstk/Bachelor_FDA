@@ -21,7 +21,6 @@ RoxygenNote: 7.3.2
 Imports: 
     tf,
     stats,
-    utils,
     foreach,
     doParallel,
     doRNG,

@@ -27,7 +27,7 @@
 #' grid <- seq(0, 1, length.out = m)
 #' bm <- function(g) {
 #'   d <- diff(g)[1]
-#'   c(0, cumsum(rnorm(length(g) - 1, sd = sqrt(d))))
+#'   c(0, cumsum(stats::rnorm(length(g) - 1, sd = sqrt(d))))
 #' }
 #' X <- t(replicate(n, bm(grid)))
 #'
@@ -85,7 +85,7 @@ asym_mean_L2_test <- function(fd = NULL,
   q <- which(cum_var >= fve)[1]
   eigenvalues_fve <- eigenvalues[seq_len(q)]
 
-  Z <- matrix(rnorm(q * n_sim), nrow = q)
+  Z <- matrix(stats::rnorm(q * n_sim), nrow = q)
   sim_stats <- colSums((Z^2) * eigenvalues_fve)
 
   p_value <- (sum(sim_stats >= T_L2) + 1) / (length(sim_stats) + 1)
@@ -141,7 +141,7 @@ asym_mean_L2_test <- function(fd = NULL,
 #' grid <- seq(0, 1, length.out = m)
 #' bm <- function(g) {
 #'   d <- diff(g)[1]
-#'   c(0, cumsum(rnorm(length(g) - 1, sd = sqrt(d))))
+#'   c(0, cumsum(stats::rnorm(length(g) - 1, sd = sqrt(d))))
 #' }
 #' X <- t(replicate(n, bm(grid)))
 #'
@@ -218,7 +218,7 @@ asym_mean_sup_test <- function(fd = NULL,
   eigenfunctions_fve <- eigenfunctions[, seq_len(q), drop = FALSE]
   A <- sweep(eigenfunctions_fve, 2, sqrt(eigenvalues_fve), "*")
 
-  Z <- matrix(rnorm(q * n_sim), nrow = q)
+  Z <- matrix(stats::rnorm(q * n_sim), nrow = q)
   gp_vals <- A %*% Z
   sim_stats <- apply(abs(gp_vals), 2, max)
 

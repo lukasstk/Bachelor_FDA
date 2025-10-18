@@ -3,7 +3,7 @@
 # ==========================================================
 simulate_bm <- function(grid, mean_shift = 0) {
   dt <- diff(grid)[1]
-  c(0, cumsum(rnorm(length(grid) - 1, sd = sqrt(dt)))) + mean_shift
+  c(0, cumsum(stats::rnorm(length(grid) - 1, sd = sqrt(dt)))) + mean_shift
 }
 
 # MCAR: zufällige Intervalle, immer >50% Coverage möglich

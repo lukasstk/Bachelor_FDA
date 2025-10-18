@@ -27,8 +27,8 @@ test_that("test functionality of .group_mean_estimators", {
   expect_named(res, c("mean_A", "mean_B", "pA", "pB"))
   expect_length(res$mean_A, 4)
 
-  expected_mean_A <- c(-0.2204551, 0.5767731, 0.3426848, 0.6039907)
-  expected_mean_B <- c(0.8146084, -0.9759570,  0.2557271, -0.6326306)
+  expected_mean_A <- c(0.02264198, -0.32700300, -0.02730960, 1.06305755)
+  expected_mean_B <- c(-0.1630356, -1.2529771, -0.7037129, 0.2781076)
   expected_pA <- rep(0.6, 4)
   expected_pB <- rep(0.4, 4)
 

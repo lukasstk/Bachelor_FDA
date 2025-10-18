@@ -3,7 +3,7 @@
 # ==========================================================
 simulate_bm <- function(grid, mean_shift = 0) {
   dt <- diff(grid)[1]
-  c(0, cumsum(rnorm(length(grid) - 1, sd = sqrt(dt)))) + mean_shift
+  c(0, cumsum(stats::rnorm(length(grid) - 1, sd = sqrt(dt)))) + mean_shift
 }
 
 make_O_mcar <- function(grid) {
@@ -46,9 +46,9 @@ test_that("bootstrap tests maintain nominal Type-I error under MCAR", {
     X[O == 0L] <- NA_real_
 
     res_L2 <- boot_mean_test(X = X, n_boot = n_boot, stat = "L2",
-                             manage_backend = "sequential")
+                             manage_backend = "auto", ncpus = 2)
     res_D  <- boot_mean_test(X = X, n_boot = n_boot, stat = "D",
-                             manage_backend = "sequential")
+                             manage_backend = "auto", ncpus = 2)
 
     rejections_L2[r] <- res_L2$p.value < alpha
     rejections_D[r]  <- res_D$p.value  < alpha
@@ -82,9 +82,9 @@ test_that("bootstrap tests detect systematic MNAR bias", {
     X[O == 0L] <- NA_real_
 
     res_L2 <- boot_mean_test(X = X, n_boot = n_boot, stat = "L2",
-                             manage_backend = "sequential")
+                             manage_backend = "auto", ncpus = 2)
     res_D  <- boot_mean_test(X = X, n_boot = n_boot, stat = "D",
-                             manage_backend = "sequential")
+                             manage_backend = "auto", ncpus = 2)
 
     rejections_L2[r] <- res_L2$p.value < alpha
     rejections_D[r]  <- res_D$p.value  < alpha
@@ -122,12 +122,12 @@ test_that("bootstrap tests show increasing rejection
 
     p_L2 <- tryCatch(
       boot_mean_test(X = bm_mat, n_boot = n_boot, stat = "L2",
-                     manage_backend = "sequential")$p.value,
+                     manage_backend = "auto", ncpus = 2)$p.value,
       error = function(e) NA_real_
     )
     p_D <- tryCatch(
       boot_mean_test(X = bm_mat, n_boot = n_boot, stat = "D",
-                     manage_backend = "sequential")$p.value,
+                     manage_backend = "auto", ncpus = 2)$p.value,
       error = function(e) NA_real_
     )
 

@@ -133,7 +133,7 @@ p_right <- ggplot(df_band, aes(x = ti)) +
   scale_x_continuous(
     breaks = hr_breaks,
     labels = hr_labels,
-    expand = c(0,0)
+    expand = expansion(mult = c(0, 0.01))
   ) +
   coord_cartesian(ylim = c(-40, 40)) +
   labs(x = "time", y = "difference in means") +
