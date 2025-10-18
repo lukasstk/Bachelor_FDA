@@ -183,7 +183,7 @@ p_right <- ggplot(df_cb, aes(x = time)) +
     breaks = c("00:00", "06:00", "12:00", "18:00", "23:30"),
     labels = c("00:00", "06:00", "12:00", "18:00", "24:00"),
     drop   = FALSE,
-    expand = c(0, 0)
+    expand = expansion(mult = c(0, 0.02))
   ) +
   coord_cartesian(ylim = c(-10, 10)) +
   labs(x = "time", y = expression("Difference in means ("*degree*C*")")) +
@@ -204,13 +204,13 @@ Figure_6_temp_data <- p_left + plot_spacer() + p_right +
   plot_layout(widths = c(1, 0.1, 1))
 
 # Abspeichern
-# ggsave(
-#   filename = "Plots/Figure_6_temp_data.png",
-#   plot     = Figure_6_temp_data,
-#   width    = 10,
-#   height   = 4,
-#   dpi      = 300
-# )
+ggsave(
+  filename = "Plots/Figure_6_temp_data.png",
+  plot     = Figure_6_temp_data,
+  width    = 10,
+  height   = 4,
+  dpi      = 300
+)
 
 
 # ==== Figure-7-Style (Bootstrap-p-Werte über m) – FIX: Gruppen manuell/fix ====
