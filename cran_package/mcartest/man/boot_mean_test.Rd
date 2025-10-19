@@ -15,7 +15,7 @@ boot_mean_test(
   alpha = 0.05,
   compute_bands = TRUE,
   bands_only = FALSE,
-  ncpus = parallel::detectCores(logical = TRUE) - 4,
+  ncpus = max(1L, parallel::detectCores(logical = TRUE) - 2L),
   stat = c("L2", "D"),
   chunk_size = NULL,
   manage_backend = "auto",
