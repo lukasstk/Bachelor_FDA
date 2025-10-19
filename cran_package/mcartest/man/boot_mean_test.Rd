@@ -11,15 +11,15 @@ boot_mean_test(
   observed_ratio = 1,
   n_boot = 10000,
   min_frac = 0.1,
-  alpha = 0.05,
-  ncpus = parallel::detectCores(logical = TRUE),
   seed = NULL,
-  stat = c("L2", "D"),
+  alpha = 0.05,
   compute_bands = TRUE,
+  bands_only = FALSE,
+  ncpus = parallel::detectCores(logical = TRUE) - 4,
+  stat = c("L2", "D"),
   chunk_size = NULL,
   manage_backend = "auto",
   worker_blas_threads = 1L,
-  bands_only = FALSE,
   max_redraws = 20L
 )
 }
@@ -40,15 +40,18 @@ when \code{groups} is missing.}
 \item{min_frac}{Minimum per-time-point coverage per group
 used to select the subdomain.}
 
+\item{seed}{RNG seed (passed to doRNG).}
+
 \item{alpha}{Significance level for bands (Supremum only).}
+
+\item{compute_bands}{Compute confidence bands (Supremum only)?}
+
+\item{bands_only}{Logical: if TRUE, return only
+band information instead of a full \code{htest}.}
 
 \item{ncpus}{Number of workers for an internal cluster (if created).}
 
-\item{seed}{RNG seed (passed to doRNG).}
-
 \item{stat}{\code{"L2"}, \code{"D"} oder \code{c("L2","D")}.}
-
-\item{compute_bands}{Compute confidence bands (Supremum only)?}
 
 \item{chunk_size}{Number of bootstrap replicates per foreach task.}
 
@@ -56,9 +59,6 @@ used to select the subdomain.}
 
 \item{worker_blas_threads}{BLAS/OpenMP threads
 per worker (internal pool only).}
-
-\item{bands_only}{Logical: if TRUE, return only
-band information instead of a full \code{htest}.}
 
 \item{max_redraws}{Maximum number of redraw attempts
 for invalid bootstrap samples.}
