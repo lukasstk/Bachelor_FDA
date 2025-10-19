@@ -62,5 +62,5 @@ p2 <- ggplot(df, aes(x = t, y = O)) +
 p_final <- p1 / p2  
 
 # Speichern
-ggsave("Plots/XO_plot.png", p_final,
+ggsave("Plots/x_o_plot.png", p_final,
        width = 10, height = 4, dpi = 120)

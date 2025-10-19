@@ -246,13 +246,13 @@ p_right <- ggplot(bands, aes(t, diff)) +
     axis.ticks.length = unit(3, "pt")
   )
 
-Figure_5 <- p_left + plot_spacer() + p_right +
+brownian_motion_plot <- p_left + plot_spacer() + p_right +
   plot_layout(widths = c(1, 0.1, 1))
 
 # # Abspeichern
 # ggsave(
-#   filename = "Plots/Figure_5.png",
-#   plot     = Figure_5,
+#   filename = "Plots/brownian_motion_plot.png",
+#   plot     = brownian_motion_plot,
 #   width    = 10,
 #   height   = 4,
 #   dpi      = 300
@@ -275,7 +275,7 @@ m_grid   <- 100                 # grid points
 grid     <- seq(0, 1, length.out = m_grid)
 alpha    <- 0.05
 b_vals   <- seq(1.0, 2.0, by = 0.1)   # vary b
-n_sims   <- 1000                    # für Speed; Paper ~5000
+n_sims   <- 5000                    # für Speed; Paper ~5000
 
 # ---- Helpers ----
 simulate_bm <- function(grid) {
@@ -330,29 +330,13 @@ res_list <- pblapply(b_vals, function(b_now) {
   )
 })
 
+
+# res_df <- readRDS("C:/LMU/Bachelor/Bacherlor_FDA/Data/brownian_motion_rej_probs_df.rds")
+
 res_df <- dplyr::bind_rows(res_list)
 
 # ---- Plot (Figure-4-Style, ohne TF) ----
-ggplot(res_df, aes(x = b, y = rej, shape = test)) +
-  geom_point(size = 3, stroke = 1.1) +
-  scale_shape_manual(values = c("T[mu,L^2]" = 1, "T[mu,D]" = 2)) + # 1: o, 2: △
-  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.1)) + 
-  scale_x_continuous(
-    limits = c(1, 2),
-    breaks = seq(1, 2, by = 0.2))+ 
-  labs(x = "b", y = "rejection probability",
-       shape = NULL,
-       title = "Rejection probabilities under MNAR censoring (a = -1, n = 100)") +
-  theme_classic(base_size = 12) +
-  theme(legend.position = c(.88, .18))
-
-library(ggplot2)
-library(extrafont)
-
-#Figure 4: Rejection Probabilities
-rejection_proba <- readRDS("C:/LMU/Bachelor/Bacherlor_FDA/results/Figure_4_5/res_df_20250913-193109.rds")
-
-Figure_4 <- ggplot(rejection_proba, aes(x = b, y = rej, shape = test, color = test)) +
+brownian_motion_rej_probs_plot <- ggplot(res_df, aes(x = b, y = rej, shape = test, color = test)) +
   geom_point(size = 5, stroke = 1.5, shape = 4) +
   scale_color_manual(
     values = c("T[mu,L^2]" = "steelblue",
@@ -388,11 +372,9 @@ Figure_4 <- ggplot(rejection_proba, aes(x = b, y = rej, shape = test, color = te
   )
 
 
-
-
 # ggsave(
-#   filename = "Plots/Figure_4.png",
-#   plot     = Figure_4,
+#   filename = "Plots/brownian_motion_rej_probs_plot.png",
+#   plot     = brownian_motion_rej_probs_plot,
 #   width    = 10,    
 #   height   = 5,
 #   dpi      = 300

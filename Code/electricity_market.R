@@ -135,13 +135,13 @@ p_right <- ggplot(df_band, aes(x = demand)) +
   )
 
 # Kombi
-Figure_6_elec_data <- p_left + plot_spacer() + p_right +
+electricity_market_plot <- p_left + plot_spacer() + p_right +
   plot_layout(widths = c(1, 0.1, 1))
 
 # # Abspeichern
 # ggsave(
-#   filename = "Plots/Figure_6_elec_data.png",
-#   plot     = Figure_6_elec_data,
+#   filename = "Plots/electricity_market_plot.png",
+#   plot     = electricity_market_plot,
 #   width    = 10,
 #   height   = 4,
 #   dpi      = 300

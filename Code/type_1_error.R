@@ -15,26 +15,6 @@ suppressPackageStartupMessages({
   library(pbapply)
 })
 
-## -------------------- Backend EINMAL starten & registrieren -------------------
-# workers <- max(1L, parallel::detectCores(logical = TRUE) - 1L)
-# cl <- parallel::makeCluster(workers)
-# on.exit(try(parallel::stopCluster(cl), silent = TRUE), add = TRUE)
-# doParallel::registerDoParallel(cl)
-# doRNG::registerDoRNG(42)
-# 
-# ## Gegen Oversubscription (BLAS/OpenMP) – wichtig für Performance
-# old_threads <- Sys.getenv(c("OPENBLAS_NUM_THREADS","MKL_NUM_THREADS","OMP_NUM_THREADS"),
-#                           unset = NA)
-# on.exit({
-#   if (!is.na(old_threads[1])) Sys.setenv(OPENBLAS_NUM_THREADS = old_threads[1])
-#   if (!is.na(old_threads[2])) Sys.setenv(MKL_NUM_THREADS     = old_threads[2])
-#   if (!is.na(old_threads[3])) Sys.setenv(OMP_NUM_THREADS     = old_threads[3])
-# }, add = TRUE)
-# Sys.setenv(OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="1", OMP_NUM_THREADS="1")
-# 
-# message(sprintf("Inneres Backend: %s mit %d Workern",
-#                 foreach::getDoParName(), foreach::getDoParWorkers()))
-
 ## ---------------------- Datengenerator (fix) --------------------------
 simulate_bm <- function(grid) {
   dt  <- diff(grid)[1]

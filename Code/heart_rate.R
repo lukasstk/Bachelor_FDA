@@ -150,13 +150,13 @@ p_right <- ggplot(df_band, aes(x = ti)) +
   )
 
 # Kombinieren mit Spacer
-Figure_6_Heart_rate <- p_left + plot_spacer() + p_right +
+heart_rate_plot <- p_left + plot_spacer() + p_right +
   plot_layout(widths = c(1, 0.1, 1))
 
 # Abspeichern
 ggsave(
-  filename = "Plots/Figure_6_Heart_rate.png",
-  plot     = Figure_6_Heart_rate,
+  filename = "Plots/heart_rate_plot.png",
+  plot     = heart_rate_plot,
   width    = 10,
   height   = 4,
   dpi      = 300

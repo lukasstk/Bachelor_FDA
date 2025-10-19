@@ -122,7 +122,7 @@ print(p_ex2)
 
 
 # Plot 1 speichern
-ggsave("Plots/example1.png", plot = p_ex1, width = 10, height = 4, dpi = 300)
+ggsave("Plots/grouping_partition_1.png", plot = p_ex1, width = 10, height = 4, dpi = 300)
 
 # Plot 2 speichern
-ggsave("Plots/example2.png", plot = p_ex2, width = 10, height = 4, dpi = 300)
+ggsave("Plots/grouping_partition_2.png", plot = p_ex2, width = 10, height = 4, dpi = 300)

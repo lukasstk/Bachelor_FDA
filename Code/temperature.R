@@ -200,13 +200,13 @@ p_right <- ggplot(df_cb, aes(x = time)) +
   )
 
 # Kombination
-Figure_6_temp_data <- p_left + plot_spacer() + p_right +
+temperature_plot <- p_left + plot_spacer() + p_right +
   plot_layout(widths = c(1, 0.1, 1))
 
 # Abspeichern
 ggsave(
-  filename = "Plots/Figure_6_temp_data.png",
-  plot     = Figure_6_temp_data,
+  filename = "Plots/temperature_plot.png",
+  plot     = temperature_plot,
   width    = 10,
   height   = 4,
   dpi      = 300
@@ -267,7 +267,7 @@ df_table <- df_p |>
 print(df_table, n = Inf)
 
 # Figure 7 im Figure-4-Stil
-Figure_7 <- ggplot(df_p, aes(x = m, y = p, shape = test, color = test)) +
+temperature_rej_probs_plot <- ggplot(df_p, aes(x = m, y = p, shape = test, color = test)) +
   geom_point(size = 5, stroke = 1.5, shape = 4) +
   geom_hline(yintercept = 0.05, linetype = "dashed") +
   scale_color_manual(
@@ -309,12 +309,12 @@ Figure_7 <- ggplot(df_p, aes(x = m, y = p, shape = test, color = test)) +
     shape = guide_legend(override.aes = list(size = 4))
   )
 
-print(Figure_7)
+print(temperature_rej_probs_plot)
 
 # Speichern
 # ggsave(
-#   filename = "Plots/Figure_7.png",
-#   plot     = Figure_7,
+#   filename = "Plots/temperature_rej_probs_plot.png",
+#   plot     = temperature_rej_probs_plot,
 #   width    = 10,
 #   height   = 5,
 #   dpi      = 300
