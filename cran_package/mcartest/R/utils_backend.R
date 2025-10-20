@@ -52,7 +52,7 @@
                 onexit = TRUE)
 }
 
-# # --- Manuell ausfuehren wenn noch kein package ---
+# # --- Load manually if package is not loaded ---
 # if (!exists(".tfu_par_env", envir = globalenv())) {
 #   .tfu_par_env <- new.env(parent = emptyenv())
 #   .tfu_par_env$finalizer_set <- FALSE
