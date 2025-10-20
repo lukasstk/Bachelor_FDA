@@ -1,3 +1,5 @@
+# Testing for Missingness Patterns in Incomplete Functional Data
+
 This repository provides an R package and simulation framework designed to test the **Missing Completely at Random (MCAR)** assumption in partially observed functional data.\
 It was developed as part of the Bachelor's Thesis *"Testing for Missingness Patterns in Incomplete Functional Data"* at **Ludwig-Maximilians-Universität München (LMU)**.
 
