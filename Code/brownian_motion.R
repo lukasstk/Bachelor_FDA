@@ -1,191 +1,71 @@
 # ===============================================================
-# Brownian-Motion Testdaten + Anwendung der neuen Funktionen
-# (asym_mean_L2_test, asym_mean_sup_test, boot_mean_test)
-# → Keine eigenen Gruppen: Auto-Gruppierung via observed_ratio = 1 (Default)
+# Brownian-Motion simulation study 
+#   - Calculation of rejection probabilities
+#   - visualization
 # ===============================================================
 
-library(dplyr)
-library(tidyr)
-library(tidyfun)
-library(tf)
-library(ggplot2)
-library(patchwork)
-library(foreach)
-library(doRNG)
-library(pbapply)
-library(checkmate)
+library(extrafont)
 
 set.seed(42)
 
-# ---------------- Parameter ----------------
-n            <- 100                    # Anzahl Pfade
-grid_spacing <- 100
-alpha    <- 0.05
-grid         <- seq(0, 1, length.out = grid_spacing)
-ids          <- paste0("ID", seq_len(n))
-mechanism    <- "MNAR"                 # "MCAR" oder "MNAR"
+# ===============================================================
+# Data generator
+# ===============================================================
 
-# ---------------- Hilfsfunktionen ----------------
-simulate_bm <- function(grid, mean_shift = 0) {
-  dt <- diff(grid)[1]
+# Generate one Brownian motion sample path
+simulate_bm <- function(grid) {
+  dt  <- diff(grid)[1]
   inc <- rnorm(length(grid) - 1, sd = sqrt(dt))
-  c(0, cumsum(inc)) + mean_shift
+  c(0, cumsum(inc))
 }
 
-make_O_mcar <- function(grid) {
-  if (runif(1) < 0.5) {
-    rep(1, length(grid))  # vollständig
-  } else {
-    U1 <- runif(1); U2 <- runif(1)
-    L  <- min(U1, U2); U <- max(U1, U2)
-    as.numeric(grid >= L & grid < U)  # nur im Intervall beobachtet
+# Generate observed Brownian data under MCAR or MNAR mechanism
+simulate_X_obs <- function(n, grid_spacing = 100,
+                           mechanism = c("MCAR", "MNAR")) {
+  mechanism <- match.arg(mechanism)
+  grid <- seq(0, 1, length.out = grid_spacing)
+  m <- length(grid)
+  
+  # Simulate n Brownian motion trajectories
+  bm_mat <- t(replicate(n, simulate_bm(grid)))
+  rownames(bm_mat) <- paste0("ID", seq_len(n))
+  
+  # Apply missingness mechanism
+  if (mechanism == "MCAR") {
+    complete <- runif(n) < 0.5
+    O_mat <- matrix(0L, n, m)
+    if (any(complete)) O_mat[complete, ] <- 1L
+    if (any(!complete)) {
+      k  <- sum(!complete)
+      U  <- matrix(runif(k * 2), ncol = 2)
+      L  <- pmin(U[, 1], U[, 2]); R <- pmax(U[, 1], U[, 2])
+      Oi <- outer(L, grid, "<=") & outer(R, grid, ">")
+      O_mat[!complete, ] <- 1L * Oi
+    }
+  } else {  # MNAR: observed only when -1 < X(t) < 2
+    within   <- (bm_mat > -1) & (bm_mat < 2)
+    complete <- rowSums(within) == m
+    O_mat <- matrix(0L, n, m)
+    if (any(complete))   O_mat[complete, ]   <- 1L
+    if (any(!complete))  O_mat[!complete, ]  <- 1L * within[!complete, ]
   }
+  
+  # Apply observation mask to data
+  X_obs <- bm_mat
+  X_obs[O_mat == 0L] <- NA_real_
+  list(X = X_obs, grid = grid)
 }
 
-make_O_mnar <- function(x_row) {
-  if (all(x_row > -1 & x_row < 2)) {
-    rep(1, length(x_row))                  # vollständig beobachtet
-  } else {
-    as.numeric(x_row > -1 & x_row < 2)     # sonst nur im Bereich beobachtet
-  }
-}
+# ===============================================================
+# Simulate data and visualize
+# ===============================================================
 
-# ---------------- Daten simulieren ----------------
-# Brownian Paths (unter H0 ohne Mean-Shift)
-bm_mat <- t(replicate(n, simulate_bm(grid)))
-rownames(bm_mat) <- ids
+# Generate observed Brownian data
+sim_data <- simulate_X_obs(n = 100, grid_spacing = 100, mechanism = "MNAR")
+X   <- sim_data$X
+grid <- sim_data$grid
 
-# --- Beobachtungsmatrix rein aus dem Mechanismus erzeugen ---
-if (mechanism == "MCAR") {
-  O <- t(sapply(seq_len(n), function(i) make_O_mcar(grid)))
-} else if (mechanism == "MNAR") {
-  O <- t(apply(bm_mat, 1L, make_O_mnar))
-} else {
-  stop("Unknown mechanism")
-}
-storage.mode(O) <- "integer"
-rownames(O) <- ids
-colnames(O) <- NULL
-
-# Beobachtete Werte (NA außerhalb Beobachtung)
-X <- bm_mat
-X[O == 0L] <- NA_real_
-
-# ---------------- Long-Format bauen (df_long) ----------------
-# Spaltennamen als echte t-Werte, damit pivot_longer sauber wird
-colnames(X) <- formatC(grid, digits = 12, format = "fg", flag = "#")
-
-df_long <- as.data.frame(X) |>
-  mutate(id = ids) |>
-  tidyr::pivot_longer(
-    cols = -id,
-    names_to = "t",
-    values_to = "x"
-  ) |>
-  mutate(t = as.numeric(t)) |>
-  arrange(id, t)
-
-# ---------------- Pipeline (bis zur Matrix) ----------------
-# 1) Grid & IDs
-grid <- sort(unique(df_long$t))
-ids  <- unique(df_long$id)
-
-# 2) Wide-Matrix X (n x m)
-df_wide <- df_long %>%
-  select(id, t, x) %>%
-  mutate(t = as.numeric(t)) %>%
-  tidyr::pivot_wider(names_from = t, values_from = x) %>%
-  arrange(match(id, ids))
-
-ord   <- order(as.numeric(names(df_wide)[-1]))
-X <- as.matrix(df_wide[, c(1 + ord)])
-rownames(X) <- df_wide$id
-colnames(X) <- NULL
-
-# 3) Beobachtungsmatrix O aus NA-Maske
-O <- 1L * !is.na(X)
-
-# ---------------- Neue Algorithmen aufrufen (Auto-Gruppierung) ----------------
-# Algo 1 (neu): L2-Test (asymptotisch)
-res_L2 <- asym_mean_L2_test(
-  X   = X,
-  # keine groups → Auto-Gruppierung (observed_ratio = 1)
-  fve     = 0.99,
-  n_sim   = 10000,       # MC für KL-Mischung (p-Wert)
-  min_frac= 0.10,
-  seed    = 42
-)
-cat("Algo1 L2  -> stat:", unname(res_L2$statistic), " p:", res_L2$p.value, "\n")
-
-# Algo 2 (neu): Supremums-Test (asymptotisch) + simultane Bänder
-res_sup <- asym_mean_sup_test(
-  X        = X,
-  # keine groups → Auto-Gruppierung (observed_ratio = 1)
-  fve          = 0.99,
-  n_sim        = 10000,
-  min_frac     = 0.10,
-  seed         = 42,
-  alpha        = alpha,
-  compute_bands= TRUE,
-  bands_only   = FALSE
-)
-cat("Algo2 Sup -> stat:", unname(res_sup$statistic), " p:", res_sup$p.value, "\n")
-
-# Bänder (kompakte Liste)
-bands_list <- asym_mean_sup_test(
-  X        = X,
-  # keine groups → Auto-Gruppierung (observed_ratio = 1)
-  fve          = 0.99,
-  n_sim        = 10000,
-  min_frac     = 0.10,
-  seed         = 42,
-  alpha        = alpha,
-  compute_bands= TRUE,
-  bands_only   = TRUE
-)
-
-bands <- data.frame(
-  t     = bands_list$bands$grid,
-  diff  = tf::tf_evaluate(bands_list$estimate$mean_diff, arg = bands_list$bands$grid)[[1]],
-  lower = bands_list$bands$lower,
-  upper = bands_list$bands$upper
-)
-
-# Algo 5 (neu): Bootstrap-P-Werte – getrennte Aufrufe für L2 und D
-res_boot_L2 <- boot_mean_test(
-  X        = X,
-  # keine groups → Auto-Gruppierung (observed_ratio = 1)
-  n_boot       = 10000,
-  min_frac     = 0.10,
-  alpha        = alpha,
-  stat         = "L2",
-  compute_bands= TRUE,
-  manage_backend = "auto",
-  seed         = 123
-)
-
-res_boot_D <- boot_mean_test(
-  X        = X,
-  # keine groups → Auto-Gruppierung (observed_ratio = 1)
-  n_boot        = 10000,
-  min_frac     = 0.10,
-  alpha        = alpha,
-  stat         = "D",
-  compute_bands= TRUE,   # hier optional zugleich Bandbreiten-Quantil
-  manage_backend = "auto",
-  seed         = 123
-)
-
-cat(
-  "Algo5 Boot -> L2: stat", unname(res_boot_L2$statistic), " p", res_boot_L2$p.value,
-  " | D: stat", unname(res_boot_D$statistic), " p", res_boot_D$p.value, "\n"
-)
-
-# ---------------- Plot: links Kurven (vollständig vs. unvollständig nur für Anzeige),
-# rechts Diff + 95%-Band ----------------
-library(ggplot2)
-library(patchwork)
-
+# Prepare data in long format
 df_obs <- as.data.frame(X) %>%
   mutate(
     id = rownames(X),
@@ -223,6 +103,21 @@ p_left <- ggplot(df_obs, aes(x = t, y = x, group = id)) +
     axis.ticks.length = unit(3, "pt")
   )
 
+# --- Run asymptotic supremum test and extract mean difference with bands ---
+res_sup <- asym_mean_sup_test(
+  X = X,
+  seed = 42,
+  bands_only = TRUE
+)
+
+# --- Prepare data frame for plotting mean difference and simultaneous bands ---
+bands <- data.frame(
+  t     = res_sup$bands$grid,
+  diff  = tf::tf_evaluate(res_sup$estimate$mean_diff, arg = res_sup$bands$grid)[[1]],
+  lower = res_sup$bands$lower,
+  upper = res_sup$bands$upper
+)
+
 p_right <- ggplot(bands, aes(t, diff)) +
   geom_hline(yintercept = 0, linewidth = 0.3, color = "grey35") +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.15, fill = "grey50") +
@@ -259,83 +154,69 @@ brownian_motion_plot <- p_left + plot_spacer() + p_right +
 # )
 
 
-
 # ============================================================================
-# Plot: Rejection-Probs vs. b (MNAR, a = -1 < b) – nur T_{mu,L2} und T_{mu,D}
-# (asymptotische Varianten der neuen Funktionen; ohne eigene Gruppen)
+# Plot: Rejection probabilities vs. b (MNAR, a = -1 < b)
+# Tests the power of T_{μ,L²} and T_{μ,D} under increasing truncation level b
 # ============================================================================
-
-library(dplyr)
-library(ggplot2)
-
 
 # ---- Simulation settings ----
-n        <- 100                 # sample size per run (wie im Paper)
-m_grid   <- 100                 # grid points
-grid     <- seq(0, 1, length.out = m_grid)
+n        <- 100
+grid     <- seq(0, 1, length.out = 100)
 alpha    <- 0.05
-b_vals   <- seq(1.0, 2.0, by = 0.1)   # vary b
-n_sims   <- 5000                    # für Speed; Paper ~5000
+b_vals   <- seq(1.0, 2.0, by = 0.1)
+n_sims   <- 5000
 
-# ---- Helpers ----
-simulate_bm <- function(grid) {
-  dt  <- diff(grid)[1]
-  inc <- rnorm(length(grid) - 1, sd = sqrt(dt))
-  c(0, cumsum(inc))
-}
-
-# MNAR censoring: observe only when a < X(t) < b  (a = -1)
+# ---- Helper: MNAR censoring mechanism ----
 make_missing_pattern <- function(x_row, a = -1, b = 2) {
   as.integer(x_row > a & x_row < b)
 }
 
+# ---- One Monte Carlo run for given b ----
 one_run <- function(b_now) {
-  # 1) simulate n Brownian paths on grid
-  bm_mat <- t(replicate(n, simulate_bm(grid)))
-  # 2) build observation mask under MNAR censoring
-  O  <- t(apply(bm_mat, 1L, make_missing_pattern, a = -1, b = b_now))
+  bm_mat <- t(replicate(n, simulate_bm(grid)))                 # simulate n Brownian paths
+  O  <- t(apply(bm_mat, 1L, make_missing_pattern, a = -1, b = b_now))  # MNAR observation mask
   storage.mode(O) <- "integer"
   
-  # 3) observed matrix with NAs
   X <- bm_mat
-  X[O == 0L] <- NA_real_
+  X[O == 0L] <- NA_real_                                       # apply missingness
   
-  # 4) keine expliziten Gruppen – Auto-Gruppierung (observed_ratio=1)
-  p_L2 <- tryCatch(
-    asym_mean_L2_test(X = X, n_sim = 10000)$p.value,
+  p_L2 <- tryCatch(                                             # asymptotic L2 test
+    asym_mean_L2_test(X = X)$p.value,
     error = function(e) NA_real_
   )
-  p_D  <- tryCatch(
-    asym_mean_sup_test(X = X, n_sim = 10000, compute_bands = FALSE)$p.value,
+  p_D <- tryCatch(                                              # asymptotic supremum test
+    asym_mean_sup_test(X = X, compute_bands = FALSE)$p.value,
     error = function(e) NA_real_
   )
   
   c(p_L2, p_D)
 }
 
-# ---- Monte Carlo over b ----
+# ---- Monte Carlo loop over b values ----
 res_list <- pblapply(b_vals, function(b_now) {
-  # 2 x n_sims: [1,] = p_L2, [2,] = p_D
-  ps  <- pbreplicate(n_sims, one_run(b_now))
-  rej <- rowMeans(ps < alpha, na.rm = TRUE)  # c(L2, D)
+  ps  <- pbreplicate(n_sims, one_run(b_now))                   # replicate simulations
+  rej <- rowMeans(ps < alpha, na.rm = TRUE)                    # rejection rates
   
-  cat(sprintf("b=%.1f  ->  rej L2=%.3f,  rej D=%.3f\n",
+  cat(sprintf("b = %.1f  ->  rej L2 = %.3f,  rej D = %.3f\n",
               b_now, rej[1], rej[2]))
   
   data.frame(
     b    = b_now,
     test = c("T[mu,L^2]", "T[mu,D]"),
-    rej  = rej,
-    row.names = NULL
+    rej  = rej
   )
 })
 
 
-# res_df <- readRDS("C:/LMU/Bachelor/Bacherlor_FDA/Data/brownian_motion_rej_probs_df.rds")
+# ============================================================================  
+# Precomputed Results:
+#   - The file below contains rejection probabilities from 5000 Monte Carlo runs.  
+# ============================================================================  
+# res_df <- readRDS("Data/brownian_motion_rej_probs_df.rds")
 
 res_df <- dplyr::bind_rows(res_list)
 
-# ---- Plot (Figure-4-Style, ohne TF) ----
+
 brownian_motion_rej_probs_plot <- ggplot(res_df, aes(x = b, y = rej, shape = test, color = test)) +
   geom_point(size = 5, stroke = 1.5, shape = 4) +
   scale_color_manual(
@@ -356,9 +237,9 @@ brownian_motion_rej_probs_plot <- ggplot(res_df, aes(x = b, y = rej, shape = tes
     legend.position.inside = c(0.895, 0.227),
     legend.margin = margin(7, 7, 7, 7),
     text = element_text(family = "Times New Roman"),
-    axis.title.x = element_text(size = 25, margin = margin(t = 30)),  # größer + mehr Abstand
-    axis.title.y = element_text(size = 25, margin = margin(r = 30)),  # größer + mehr Abstand
-    axis.text  = element_text(size = 18),                             # Ticklabels größer
+    axis.title.x = element_text(size = 25, margin = margin(t = 30)), 
+    axis.title.y = element_text(size = 25, margin = margin(r = 30)),  
+    axis.text  = element_text(size = 18),                             
     legend.background = element_rect(fill = "white", colour = "black"),
     legend.key.size = unit(1.2, "lines"),             
     legend.text = element_text(size = 16),
@@ -371,7 +252,7 @@ brownian_motion_rej_probs_plot <- ggplot(res_df, aes(x = b, y = rej, shape = tes
     shape = guide_legend(override.aes = list(size = 4))
   )
 
-
+# # Save figure
 # ggsave(
 #   filename = "Plots/brownian_motion_rej_probs_plot.png",
 #   plot     = brownian_motion_rej_probs_plot,
@@ -379,5 +260,3 @@ brownian_motion_rej_probs_plot <- ggplot(res_df, aes(x = b, y = rej, shape = tes
 #   height   = 5,
 #   dpi      = 300
 # )
-
-
