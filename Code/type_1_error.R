@@ -109,11 +109,11 @@ run_type1_inner <- function(n, runs = 5000, grid_spacing = 100, mechanism = "MCA
 
 set.seed(42)
 
-res100 <- run_type1_inner(n = 100, runs = 100, n_sim = 1000, n_boot = 1000)
+res100 <- run_type1_inner(n = 100, runs = 5000, n_sim = 10000, n_boot = 10000)
 
-res250 <- run_type1_inner(n = 250, runs = 100, n_sim = 1000, n_boot = 1000)
+res250 <- run_type1_inner(n = 250, runs = 5000, n_sim = 10000, n_boot = 10000)
 
-res500 <- run_type1_inner(n = 500, runs = 100, n_sim = 1000, n_boot = 1000)
+res500 <- run_type1_inner(n = 500, runs = 5000, n_sim = 10000, n_boot = 10000)
 
 # Combine results for all sample sizes
 type1_table <- rbind(
