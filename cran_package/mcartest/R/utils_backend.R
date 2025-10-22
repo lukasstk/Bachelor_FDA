@@ -133,6 +133,7 @@
   }, worker_blas_threads)
   if (!is.null(seed)) parallel::clusterSetRNGStream(cl, iseed = seed)
   doParallel::registerDoParallel(cl)
+  if (!is.null(seed)) doRNG::registerDoRNG(seed)
   .tfu_par_env$cl <- cl
 
   list(

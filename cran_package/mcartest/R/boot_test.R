@@ -73,7 +73,8 @@ boot_mean_test <- function(fd = NULL,
                            alpha = 0.05,
                            compute_bands = TRUE,
                            bands_only = FALSE,
-                           ncpus = max(1L, parallel::detectCores(logical = TRUE) - 2L),
+                           ncpus = max(1L,parallel::detectCores
+                                       (logical = TRUE) - 2L),
                            stat = c("L2", "D"),
                            chunk_size = NULL,
                            manage_backend = "auto",
@@ -279,5 +280,6 @@ boot_mean_test <- function(fd = NULL,
   if (length(outputs) == 1) {
     return(outputs[[1]])
   }
+  names(outputs) <- stat
   outputs
 }
