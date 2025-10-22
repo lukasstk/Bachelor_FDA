@@ -22,6 +22,8 @@ invisible(lapply(required_pkgs, function(pkg) {
   suppressPackageStartupMessages(library(pkg, character.only = TRUE))
 }))
 
+# --- Clean up temporary variable ---
+rm(required_pkgs)
 # ===============================================================
 # Font setup: Import and register Times New Roman for plotting
 # ===============================================================
@@ -36,6 +38,14 @@ extrafont::font_import(
 # --- Register fonts for Windows devices (e.g., PDF, plots) ---
 extrafont::loadfonts(device = "win")
 extrafont::loadfonts(device = "pdf")
+
+# ===============================================================
+# Load all package functions manually (development version)
+# ===============================================================
+
+# If the package is not loaded with `library(mcartest)`,
+# all functions can be made available manually using:
+devtools::load_all("cran_package/mcartest")
 
 # ===============================================================
 # Done: All required packages and fonts are ready for use

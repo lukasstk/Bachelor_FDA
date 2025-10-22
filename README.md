@@ -112,9 +112,3 @@ Bachelor_FDA/
 source("requirements.R")
 ```
 
--   If the package is not loaded with `library(mcartest)`, all functions can be made available manually using:
-
-``` r
-# --- Load all package functions ---
-devtools::load_all("cran_package/mcartest")
-```
