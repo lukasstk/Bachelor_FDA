@@ -79,7 +79,7 @@
                                               "sequential"),
                            ncpus = parallel::detectCores(logical = TRUE),
                            worker_blas_threads = 1L,
-                           seed = 42) {
+                           seed = NULL) {
   checkmate::assert_choice(manage_backend, c("auto", "force_pool",
                                              "sequential"))
   checkmate::assert_int(ncpus, lower = 1)
@@ -117,6 +117,7 @@
   if (manage_backend == "auto" && .is_alive(.tfu_par_env$cl)) {
     doParallel::registerDoParallel(.tfu_par_env$cl)
     nworkers <- foreach::getDoParWorkers()
+    if (!is.null(seed)) doRNG::registerDoRNG(seed)
     return(list(nworkers = nworkers, used = "internal-reused"))
   }
 

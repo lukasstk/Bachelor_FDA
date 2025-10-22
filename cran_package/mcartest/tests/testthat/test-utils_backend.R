@@ -4,7 +4,8 @@
 
 test_that(".reset_backend restores thread settings and RNG safely", {
   # --- Save current env vars ---
-  old_env <- Sys.getenv(c("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS"))
+  old_env <- Sys.getenv(c("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", 
+                          "OMP_NUM_THREADS"))
 
   # --- Simulate old thread state ---
   .tfu_par_env$old_threads <- c("2", "3", "4")
@@ -35,17 +36,39 @@ test_that(".init_parallel initializes sequential backend correctly", {
   expect_type(res_seq, "list")
   expect_equal(res_seq$nworkers, 1L)
   expect_equal(res_seq$used, "sequential")
+  expect_equal(foreach::getDoParName(), "doSEQ")
 
   # --- Force new pool ---
   res_new <- .init_parallel(manage_backend = "force_pool", ncpus = 2)
   expect_true(inherits(.tfu_par_env$cl, "cluster"))
   expect_equal(res_new$used, "internal-forced")
   expect_equal(res_new$nworkers, 2L)
+  expect_type(res_new, "list")
+  expect_equal(foreach::getDoParName(), "doParallelSNOW")
 
   # --- Reuse same pool (auto) ---
   res_auto <- .init_parallel(manage_backend = "auto", ncpus = 2)
   expect_equal(res_auto$used, "internal-reused")
   expect_equal(res_auto$nworkers, 2L)
+  expect_type(res_auto, "list")
+  expect_equal(foreach::getDoParName(), "doParallelSNOW")
+  
+  # --- Force new pool with seed ---
+  res_new_seed <- .init_parallel(manage_backend = "force_pool", 
+                                 ncpus = 2, seed = 1)
+  expect_true(inherits(.tfu_par_env$cl, "cluster"))
+  expect_equal(res_new_seed$used, "internal-forced")
+  expect_equal(res_new_seed$nworkers, 2L)
+  expect_type(res_new_seed, "list")
+  expect_equal(foreach::getDoParName(), "doRNG")
+  
+  # --- Reuse same pool (auto) with seed ---
+  res_auto_seed <- .init_parallel(manage_backend = "auto", 
+                                  ncpus = 2,seed = 1)
+  expect_equal(res_auto_seed$used, "internal-reused")
+  expect_equal(res_auto_seed$nworkers, 2L)
+  expect_type(res_auto_seed, "list")
+  expect_equal(foreach::getDoParName(), "doRNG")
 })
 
 
