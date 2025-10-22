@@ -29,6 +29,70 @@ make_O_mnar <- function(x_row) {
 
 
 # ==========================================================
+# Deterministic behavior when seed is set (L2 and D tests)
+# ==========================================================
+test_that("asymptotic tests produce deterministic output when seed is set", {
+  grid <- seq(0, 1, length.out = 100)
+  n <- 100
+
+  # Simulate Brownian motion sample
+  X <- t(replicate(n, simulate_bm(grid)))
+
+  # Apply random MCAR censoring (half partially observed)
+  O <- t(replicate(n, make_O_mcar(grid)))
+  X[O == 0L] <- NA_real_
+
+  # --- L2 test ---
+  res_L2_1 <- asym_mean_L2_test(X = X, n_sim = 2500, seed = 99)
+  res_L2_2 <- asym_mean_L2_test(X = X, n_sim = 2500, seed = 99)
+
+  expect_equal(res_L2_1$p.value, res_L2_2$p.value, tolerance = 1e-12)
+
+  # --- Supremum test ---
+  res_D_1 <- asym_mean_sup_test(X = X, n_sim = 2500,
+                                compute_bands = FALSE, seed = 99)
+  res_D_2 <- asym_mean_sup_test(X = X, n_sim = 2500,
+                                compute_bands = FALSE, seed = 99)
+
+  expect_equal(res_D_1$p.value, res_D_2$p.value, tolerance = 1e-12)
+})
+
+# ==========================================================
+# Correct structure when bands_only = TRUE (Supremum test)
+# ==========================================================
+test_that("asym_mean_sup_test returns correct structure when bands_only = TRUE",
+          {
+  set.seed(123)
+  grid <- seq(0, 1, length.out = 100)
+  n <- 100
+
+  # Simulate Brownian motion trajectories
+  X <- t(replicate(n, simulate_bm(grid)))
+
+  # Apply MCAR censoring
+  O <- t(replicate(n, make_O_mcar(grid)))
+  X[O == 0L] <- NA_real_
+
+  # Run Supremum test with compute_bands = TRUE and bands_only = TRUE
+  res_sup <- asym_mean_sup_test(
+    X = X,
+    n_sim = 2500,
+    compute_bands = TRUE,
+    bands_only = TRUE
+  )
+
+  # Structural checks
+  expect_type(res_sup, "list")
+  expect_named(res_sup, c("estimate", "parameter", "bands"))
+  expect_s3_class(res_sup$estimate$mean_A, "tfd")
+  expect_s3_class(res_sup$estimate$mean_B, "tfd")
+  expect_s3_class(res_sup$estimate$mean_diff, "tfd")
+  expect_true("q" %in% names(res_sup$parameter))
+  expect_true(all(c("lower", "upper", "band", "alpha", "grid")
+                  %in% names(res_sup$bands)))
+})
+
+# ==========================================================
 # Type-I Error Simulations for MCAR and MNAR
 # (asymptotic tests: L2 and Supremum)
 # ==========================================================

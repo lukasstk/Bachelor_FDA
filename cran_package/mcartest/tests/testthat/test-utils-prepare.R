@@ -104,4 +104,34 @@ test_that("test functionality of .prepare_inputs", {
   expect_error(.prepare_inputs(X = matrix(numeric(0), nrow = 0, ncol = 0)))
   expect_error(.prepare_inputs(X = X2, observed_ratio = 2))
   expect_error(.prepare_inputs(X = X2, groups = c(TRUE, FALSE)))
+
+  # --- Case: input provided as functional data (fd) ---
+  grid <- c(0, 1/3, 2/3, 1)
+  X_fd <- matrix(rnorm(20), nrow = 5)
+  X_fd[sample(length(X_fd), 5)] <- NA
+
+  # Create functional data object
+  fd_obj <- tf::tfd(X_fd, arg = grid)
+
+  res_fd <- .prepare_inputs(fd = fd_obj, observed_ratio = 0.51)
+  expect_true(is.matrix(res_fd$X))
+  expect_true(is.numeric(res_fd$grid))
+
+  # --- Case: groups swapped (meanA < meanB) ---
+  set.seed(42)
+  X3 <- matrix(rnorm(12), nrow = 4)
+  # Make one subject clearly less observed
+  X3[1, ] <- NA
+  groups <- c(TRUE, FALSE, TRUE, FALSE)
+
+  # Expect the swap message with correct wording
+  expect_message(
+    res_swap <- .prepare_inputs(X = X3, groups = groups),
+    regexp = "Note: swapped labels so Group A is the more complete group"
+  )
+
+  # Verify that the labels were actually swapped
+  expect_false(all(res_swap$group_A == groups))
+  expect_length(res_swap$group_A, 4)
+  expect_type(res_swap$group_A, "logical")
 })

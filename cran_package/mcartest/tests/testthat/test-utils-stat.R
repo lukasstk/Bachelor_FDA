@@ -11,6 +11,11 @@ test_that("test functionality of .trapezoid_weights", {
   expect_error(.trapezoid_weights(rev(grid)))       # sorted = TRUE violated
   expect_error(.trapezoid_weights(c(0, NA, 1)))     # NA in grid
   expect_error(.trapezoid_weights(numeric(0)))      # min.len violated
+
+  # --- Edge case: single grid point ---
+  single_grid <- 0.5
+  w_single <- .trapezoid_weights(single_grid)
+  expect_equal(w_single, 1)         # should return exactly 1
 })
 
 
