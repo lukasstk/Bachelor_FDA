@@ -28,17 +28,30 @@ rm(required_pkgs)
 # Font setup: Import and register Times New Roman for plotting
 # ===============================================================
 
-# --- Import only Times New Roman font files from the Windows font directory ---
-extrafont::font_import(
-  path = "C:/Windows/Fonts",
-  pattern = "times.ttf",
-  prompt = FALSE
+# --- Detect system font directory automatically (cross-platform) ---
+font_dir <- switch(
+  Sys.info()[["sysname"]],
+  "Windows" = "C:/Windows/Fonts",
+  "Darwin"  = "/System/Library/Fonts",  # macOS
+  "Linux"   = "/usr/share/fonts",        # Linux
+  NULL
 )
 
-# --- Register fonts for Windows devices (e.g., PDF, plots) ---
-extrafont::loadfonts(device = "win")
-extrafont::loadfonts(device = "pdf")
+# --- Import Times New Roman font if not already registered ---
+if (!"Times New Roman" %in% extrafont::fonts()) {
+  message("Importing Times New Roman font...")
+  extrafont::font_import(
+    path = font_dir,
+    pattern = "times.ttf",
+    prompt = FALSE
+  )
+}
 
+# --- Register fonts for plotting devices (PDF and system default) ---
+extrafont::loadfonts(device = "pdf")
+extrafont::loadfonts(device = ifelse(.Platform$OS.type == "windows", "win", "postscript"))
+
+rm(font_dir)
 # ===============================================================
 # Load all package functions manually (development version)
 # ===============================================================
