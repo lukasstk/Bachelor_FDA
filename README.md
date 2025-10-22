@@ -99,8 +99,9 @@ Bachelor_FDA/
 ├── Thesis/
 │ └── Bachelor_Thesis.pdf   
 │
+├── requirements.R      # Installs and loads all required packages and fonts
 ├── .gitignore
-├── Bachelor_FDA.Rproj
+├── Bachelor_FDA.Rproj       
 └── README.md
 ```
 
