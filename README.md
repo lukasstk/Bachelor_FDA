@@ -27,8 +27,8 @@ Further details, theoretical background, and the full documentation of the repli
 
 The package implements the **two mean-based MCAR tests** proposed by [**Ofner et al. (2025)**](https://arxiv.org/abs/2505.08721):
 
--   $T_{\mu,L2}$ — compares group means using the $L^2$-norm\
--   $T_{\mu,D}$ — compares group means using the supremum (sup-) norm
+-   $T_{\mu,L2}$: compares group means using the $L^2$-norm\
+-   $T_{\mu,D}$: compares group means using the supremum (sup-) norm
 
 In addition, the package provides **simultaneous confidence bands** for the mean difference $\hat{\mu}_A - \hat{\mu}_B$, constructed either asymptotically or via bootstrapped quantiles, which serve as a graphical tool to visualize potential deviations between the two groups.
 
