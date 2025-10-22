@@ -2,9 +2,11 @@
 # Heart Rate Data Example
 # Apply asymptotic L2 and Supremum tests (with simultaneous bands)
 # ===============================================================
-
-library(extrafont)
-
+suppressPackageStartupMessages({
+  library(extrafont)
+  library(tidyverse)
+  library(patchwork)
+})
 # ===============================================================
 # Load and prepare data
 # ===============================================================

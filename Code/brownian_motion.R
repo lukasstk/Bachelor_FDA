@@ -3,8 +3,12 @@
 #   - Calculation of rejection probabilities
 #   - visualization
 # ===============================================================
-
-library(extrafont)
+suppressPackageStartupMessages({
+  library(extrafont)
+  library(patchwork)
+  library(tidyverse)
+  library(pbapply)
+})
 
 set.seed(42)
 

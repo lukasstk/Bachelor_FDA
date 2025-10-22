@@ -2,8 +2,11 @@
 # Functional Electricity Market Data
 # Apply asymptotic L2 and Supremum tests on log-bid curves
 # ===============================================================
-
-library(extrafont)
+suppressPackageStartupMessages({
+  library(extrafont)
+  library(tidyverse)
+  library(patchwork)
+})
 
 # ===============================================================
 # Load and prepare data

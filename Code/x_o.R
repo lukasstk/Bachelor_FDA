@@ -1,8 +1,11 @@
-library(extrafont)
-
 # ===============================================================
 # Example: Functional observation X(t) with missing region and corresponding O(t)
 # ===============================================================
+suppressPackageStartupMessages({
+  library(extrafont)
+  library(tidyverse)
+  library(patchwork)
+})
 
 # --- Data setup ---
 t <- seq(0, 1, length.out = 200)

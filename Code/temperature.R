@@ -2,10 +2,13 @@
 # Temperature Data (Graz)
 # Bootstrap-based L2 and Supremum tests with simultaneous bands
 # ===============================================================
-
-library(extrafont)
-library(lubridate)
-
+suppressPackageStartupMessages({
+  library(extrafont)
+  library(lubridate)
+  library(tidyverse)
+  library(patchwork)
+  library(pbapply)
+})
 # ===============================================================
 # Load and prepare data
 # ===============================================================
@@ -57,12 +60,16 @@ fd <- tf::tfd(df_long, arg = "hour_num", id = "date", value = "temp")
 # ===============================================================
 
 # Assign groups for plotting
+group_A <- rowMeans(!is.na(X)) == 1 
 wide$group <- ifelse(group_A, "Complete", "Incomplete")
 
 # Prepare long-format data for left panel
 df_long_plot <- wide %>%
   tidyr::pivot_longer(cols = all_of(slots48), names_to = "slot", values_to = "temp") %>%
   mutate(slot = factor(slot, levels = slots48))
+
+res_sup <- boot_mean_test(
+  fd = fd, stat = "D", compute_bands = TRUE)
 
 # --- Prepare data frame for plotting mean difference and bootstrap bands ---
 grid_sub  <- res_sup$bands$grid
@@ -75,9 +82,6 @@ idx_out <- vapply(grid_sub, function(g) which.min(abs(grid_full - g)), integer(1
 o          <- order(idx_out)
 idx_sorted <- idx_out[o]
 block      <- c(0, cumsum(diff(idx_sorted) > 1))
-
-res_sup <- boot_mean_test(
-  fd = fd, stat = "D", compute_bands = TRUE)
 
 # Extract mean difference and bands
 bands <- data.frame(

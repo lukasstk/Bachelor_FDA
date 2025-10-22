@@ -1,9 +1,11 @@
-library(extrafont)
-
 # ===============================================================
 # Example: Grouping functional data into complete and incomplete subsets
 # (Illustrates the auto-grouping logic via observed proportion threshold δ)
 # ===============================================================
+suppressPackageStartupMessages({
+  library(extrafont)
+  library(tidyverse)
+})
 
 set.seed(42)
 t <- seq(0, 1, length.out = 400)

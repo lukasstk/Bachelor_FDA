@@ -104,16 +104,17 @@ Bachelor_FDA/
 └── README.md
 ```
 
-## Requirements
+## Requirements/Getting Started
 
--   **R** (≥ 4.3.0)\
--   **Imported packages:**\
-    `tf`, `stats`, `foreach`, `doParallel`, `doRNG`, `parallel`, `checkmate`\
-    *(All dependencies are accessed explicitly via `pkg::fun()` calls.)*
+-   **R** (≥ 4.3.0)
+-   Before using the package, make sure that all required dependencies and fonts are installed and loaded by running:
 
-## Getting Started
+``` r
+# --- Install and load all required packages and fonts ---
+source("requirements.R")
+```
 
-If the package is not loaded with `library(mcartest)`, all functions can be made available manually using:
+-   If the package is not loaded with `library(mcartest)`, all functions can be made available manually using:
 
 ``` r
 # --- Load all package functions ---
