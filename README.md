@@ -18,31 +18,28 @@ In modern statistics, observations have evolved from individual numerical values
 
 In practice, however, these functional observations are often **incomplete**. Sensors may fail, participants may remove monitoring devices, or recordings may stop prematurely. Such interruptions create missing segments that can distort estimators of the mean and covariance functions and lead to **biased** conclusions if ignored. Furthermore, it is crucial to determine whether the missing parts occur **completely at random** or are systematically related to the underlying process. Examining this relationship is a crucial step before applying standard FDA techniques, as violations can lead to biased estimation and misleading conclusions.
 
-This thesis addresses this problem by implementing and empirically evaluating the statistical tests for the **Missing Completely at Random (MCAR)** assumption proposed by [**Ofner et al. (2025)**](https://arxiv.org/abs/2505.08721).\
-Rather than developing a new methodology, the focus lies on reproducing and validating their results through a dedicated R implementation within the **tidyfun** framework (Scheipl et al., 2025).\
-The objective is to provide a practical, reproducible framework that confirms the findings of the original study and demonstrates that the implemented methods perform as intended.\
-Further details, theoretical background, and the full documentation of the replication study can be found in the **Bachelor’s Thesis**, located in the folder **`/Thesis/`**.
+This thesis addresses this problem by implementing and empirically evaluating the statistical tests for the **Missing Completely at Random (MCAR)** assumption proposed by [**Ofner et al. (2025)**](https://arxiv.org/abs/2505.08721). Rather than developing a new methodology, the focus lies on reproducing and validating their results through a dedicated R implementation within the **tidyfun** framework [**Scheipl et al., 2025**](https://tidyfun.github.io/tidyfun/). The objective is to both confirm the published findings and demonstrate that the implemented methods work as intended in practice. Further details, theoretical background, and the full documentation of the replication study can be found in the **Bachelor’s Thesis**, located in the folder **`/Thesis/`**.
 
 ## Implemented Tests
 
 The package implements the **two mean-based MCAR tests** proposed by [**Ofner et al. (2025)**](https://arxiv.org/abs/2505.08721):
 
--   $T_{\mu,L2}$: compares group means using the $L^2$-norm\
+-   $T_{\mu,L2}$: compares group means using the $L^2$-norm
 -   $T_{\mu,D}$: compares group means using the supremum (sup-) norm
 
-In addition, the package provides **simultaneous confidence bands** for the mean difference $\hat{\mu}_A - \hat{\mu}_B$, constructed either asymptotically or via bootstrapped quantiles, which serve as a graphical tool to visualize potential deviations between the two groups.
+In addition, the package provides optional **simultaneous confidence bands** for the mean difference $\hat{\mu}_A - \hat{\mu}_B$, constructed either asymptotically or via bootstrapped quantiles. They serve as a graphical tool to visualize potential deviations between the two groups.
 
 Both tests are available in two variants:
 
 -   **Asymptotic version:** Approximates the null distribution of the test statistics based on the estimated covariance function and its eigenvalues.
 
--   **Bootstrap version:** Approximates the distribution of the test statistic by **resampling the data groupwise**, i.e., separately within each group $A$ and $B$ under the null hypothesis of equal means. This approach flexibly adapts to finite-sample structures, avoids the need for eigen-decomposition, and improves numerical stability and small-sample performance. In practice, the bootstrap procedure is **parallelized** to efficiently handle a large number of resamples while ensuring reproducibility through controlled random seeds.
+-   **Bootstrap version:** Approximates the distribution of the test statistic by **resampling the data groupwise**, i.e., separately within each group $A$ and $B$. This approach avoids the need for eigen-decomposition, improves numerical stability, and small-sample performance. In practice, the bootstrap procedure is **parallelized** to efficiently handle a large number of resamples while ensuring reproducibility using random seeds.
 
 > 🔹 **Note:** The distributional test $T_F$ from Ofner et al. (2025) is not included, as the focus of this thesis lies on the implementation and evaluation of mean-based tests and their bootstrap approximations.
 
 ## Evaluation
 
-All methods were evaluated on both **simulated** and **real-world datasets** (heart rate, electricity prices, and temperature series) from [Ofner et al. (2025)](https://arxiv.org/abs/2505.08721). The results confirm that the implemented methods work as intended and align with the findings of the original paper, providing an accessible and reliable R tool for practitioners.
+All methods were evaluated on both **simulated** and **real-world datasets** (heart rate, electricity prices, and temperature series) from [Ofner et al. (2025)](https://arxiv.org/abs/2505.08721). The results confirm that the implemented methods work as intended and align with the findings of the original paper, providing an accessible and reliable R tool.
 
 ## Project Structure
 
