@@ -1,16 +1,14 @@
 # Testing for Missingness Patterns in Incomplete Functional Data
 
-This repository provides an R package and simulation framework designed to test the **Missing Completely at Random (MCAR)** assumption in partially observed functional data.\
-It was developed as part of the Bachelor's Thesis *"Testing for Missingness Patterns in Incomplete Functional Data"* at **Ludwig-Maximilians-Universität München (LMU)**.
+This repository provides an R package and simulation framework designed to test the **Missing Completely at Random (MCAR)** assumption in partially observed functional data. It was developed as part of the Bachelor's Thesis *"Testing for Missingness Patterns in Incomplete Functional Data"* at **Ludwig-Maximilians-Universität München (LMU)**.
 
 The project implements and evaluates the mean-based MCAR tests proposed by [**Ofner et al. (2025)**](https://arxiv.org/abs/2505.08721), offering both **asymptotic** and **bootstrap-based** inference methods, along with simulation studies and visualization for empirical validation.
 
 The repository contains:
 
 -   Full R source code of the `mcartest` package
--   Simulation and bootstrap implementations
--   Replication scripts for all data examples
--   Generated figures and type I error tables
+-   Replication scripts for all data examples (real-world data provided in **`/Data/`**)
+-   Figures and simulations for validation
 
 ## Motivation
 
@@ -27,7 +25,7 @@ The package implements the **two mean-based MCAR tests** proposed by [**Ofner et
 -   $T_{\mu,L2}$: compares group means using the $L^2$-norm
 -   $T_{\mu,D}$: compares group means using the supremum (sup-) norm
 
-In addition, the package provides optional **simultaneous confidence bands** for the mean difference $\hat{\mu}_A - \hat{\mu}_B$, constructed either asymptotically or via bootstrapped quantiles. They serve as a graphical tool to visualize potential deviations between the two groups.
+In addition, the package provides optional **simultaneous confidence bands** for the mean difference $\hat{\mu}_A - \hat{\mu}_B$, constructed either asymptotically or via bootstrapped quantiles.
 
 Both tests are available in two variants:
 
@@ -39,7 +37,7 @@ Both tests are available in two variants:
 
 ## Evaluation
 
-All methods were evaluated on both **simulated** and **real-world datasets** (heart rate, electricity prices, and temperature series) from [Ofner et al. (2025)](https://arxiv.org/abs/2505.08721). The results confirm that the implemented methods work as intended and align with the findings of the original paper, providing an accessible and reliable R tool.
+All methods were evaluated on both **simulated** and **real-world datasets** (heart rate, electricity market, and temperature) from [Ofner et al. (2025)](https://arxiv.org/abs/2505.08721). The results confirm that the implemented methods work as intended and align with the findings of the original paper, providing an accessible and reliable R tool.
 
 ## Project Structure
 
@@ -47,7 +45,7 @@ All methods were evaluated on both **simulated** and **real-world datasets** (he
 Bachelor_FDA/
 ├── cran_package/
 │   └── mcartest/
-│     ├── DESCRIPTION          
+│     ├── DESCRIPTION          # Description of the package
 │     ├── NAMESPACE            # Export/import declarations
 │     ├── LICENSE              
 │     ├── LICENSE.md           
@@ -86,9 +84,9 @@ Bachelor_FDA/
 │
 ├── Data/
 │ ├── brownian_motion_rej_probs_df.rds
-│ ├── heart_rate.RData
-│ ├── logbidcurves.csv
-│ ├── temp_graz.rda
+│ ├── heart_rate.RData          # heart rate dataset 
+│ ├── logbidcurves.csv          # electricity market dataset
+│ ├── temp_graz.rda             # temperature dataset
 │ ├── type_1_error_n100.rds
 │ ├── type_1_error_n250.rds
 │ └── type_1_error_n500.rds
@@ -105,10 +103,9 @@ Bachelor_FDA/
 ## Requirements/Getting Started
 
 -   **R** (≥ 4.3.0)
--   Before using the package, make sure that all required dependencies and fonts are installed and loaded by running:
+-   Before running any code, make sure that all required dependencies and fonts are installed and loaded by running:
 
 ``` r
 # --- Install and load all required packages and fonts ---
 source("requirements.R")
 ```
-

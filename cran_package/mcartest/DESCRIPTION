@@ -1,6 +1,6 @@
 Package: mcartest
 Type: Package
-Title: Testing the Missing Completely at Random Assumption for Functional Data
+Title: Testing for Missingness Patterns in Incomplete Functional Data
 Version: 0.1.0
 Authors@R: 
     c(
