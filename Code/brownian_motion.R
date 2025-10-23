@@ -92,7 +92,7 @@ p_left <- ggplot(df_obs, aes(x = t, y = x, group = id)) +
     na.rm = TRUE
   ) +
   scale_x_continuous(breaks = seq(0, 1, by = 0.2), expand = c(0, 0)) +
-  labs(x = "time", y = "X(t)", color = "Group") +
+  labs(x = "time", y = "X(t)") +
   theme_minimal(base_size = 18, base_family = "Times New Roman") +
   theme(
     legend.position = "none",

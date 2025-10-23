@@ -252,8 +252,6 @@ temperature_rej_probs_plot <- ggplot(df_p, aes(x = m, y = p, shape = test, color
   ) +
   guides(shape = guide_legend(override.aes = list(size = 4)))
 
-print(temperature_rej_probs_plot)
-
 # # Save figure
 # ggsave(
 #   filename = "Plots/temperature_rej_probs_plot.png",
