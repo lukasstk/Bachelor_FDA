@@ -190,10 +190,10 @@ res_list <- pblapply(m_grid, function(m) {
   X_sub   <- X[, idx_top, drop = FALSE]
   
   rb_L2 <- boot_mean_test(X = X_sub, groups = groups_fixed,
-                          stat = "L2", compute_bands = FALSE)
+                          stat = "L2", compute_bands = FALSE, min_frac = 0)
   
   rb_D  <- boot_mean_test(X = X_sub,  groups = groups_fixed,
-                          stat = "D", compute_bands = FALSE)
+                          stat = "D", compute_bands = FALSE, min_frac = 0)
   
   data.frame(
     m    = m,
