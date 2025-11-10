@@ -109,9 +109,8 @@ boot_mean_test <- function(fd = NULL,
   mean_B_tfd <- tf::tfd(matrix(mean_B, 1), arg = subgrid)
   mean_diff_tfd <- tf::tfd(matrix(mean_diff, 1), arg = subgrid)
 
-  w <- .trapezoid_weights(subgrid)
-
-  T_L2 <- if ("L2" %in% stat) n * sum((mean_diff^2) * w) else NULL
+  T_L2 <- if ("L2" %in% stat) {
+    n * tf::tf_integrate(mean_diff_tfd^2, arg = subgrid)} else NULL
   T_D <- if ("D" %in% stat) sqrt(n) * max(abs(mean_diff)) else NULL
   T_vals <- list(L2 = T_L2, D = T_D)
 
@@ -129,6 +128,7 @@ boot_mean_test <- function(fd = NULL,
                          worker_blas_threads, seed)
     nworkers <- be$nworkers
 
+    # Determine chunk size for parallel foreach
     cs <- chunk_size
     if (is.null(cs)) {
       cs <- max(50L, ceiling(n_boot / (3L * nworkers)))
@@ -138,57 +138,62 @@ boot_mean_test <- function(fd = NULL,
 
     idx_chunks <- split(seq_len(n_boot), ceiling(seq_len(n_boot) / cs))
     chunk_idx <- NULL
+    
+    # --- Group indices and sizes ---
+    idxA <- seq_len(n)[group_A]
+    idxB <- seq_len(n)[!group_A]
+    nA <- length(idxA)
+    nB <- length(idxB)
 
     boot_list <- foreach::foreach(
       chunk_idx = idx_chunks,
       .inorder = FALSE,
       .export = c(
-        "stat", "n", "w", "group_A", "O_sub", "X_cent",
-        "max_redraws"
+        "stat", "n", "O_sub", "X_cent", "max_redraws", 
+        "idxA", "idxB", "nA", "nB", "subgrid"
       )
     ) %dorng% {
       res <- matrix(NA_real_, nrow = length(chunk_idx), ncol = length(stat))
       colnames(res) <- stat
-      diffs <- matrix(NA_real_, nrow = length(chunk_idx), ncol = ncol(X_cent))
 
       for (i in seq_along(chunk_idx)) {
         redraws <- 0
         draw_successful <- FALSE
 
         while (!draw_successful && redraws <= max_redraws) {
-          samp <- sample.int(n, n, replace = TRUE)
-          gA <- group_A[samp]
-          IA <- as.numeric(gA)
-          IB <- 1 - IA
-
-          OA <- O_sub[samp, , drop = FALSE] * IA
-          OB <- O_sub[samp, , drop = FALSE] * IB
-
+          
+          # --- Group-wise bootstrap resampling with fixed nA, nB ---
+          sampA <- idxA[sample.int(nA, nA, replace = TRUE)]
+          sampB <- idxB[sample.int(nB, nB, replace = TRUE)]
+          
+          XsA <- X_cent[sampA, , drop = FALSE]
+          XsB <- X_cent[sampB, , drop = FALSE]
+          OA  <- O_sub[sampA, , drop = FALSE]
+          OB  <- O_sub[sampB, , drop = FALSE]
+          
+          # Skip if any group has no observations at a time point
           if (any(colSums(OA) == 0) || any(colSums(OB) == 0)) {
             redraws <- redraws + 1
             next
           }
-
-          Xs <- X_cent[samp, , drop = FALSE]
-          denomA <- colSums(OA)
-          denomB <- colSums(OB)
-
-          mean_A_boot <- colSums(Xs * OA * IA, na.rm = TRUE) / denomA
-          mean_B_boot <- colSums(Xs * OB * IB, na.rm = TRUE) / denomB
-
-          diff_boot <- mean_A_boot - mean_B_boot
-          diffs[i, ] <- diff_boot
-
+          
+          # --- Group means for bootstrap sample ---
+          mean_A_boot <- colSums(XsA * OA, na.rm = TRUE) / colSums(OA)
+          mean_B_boot <- colSums(XsB * OB, na.rm = TRUE) / colSums(OB)
+          diff_boot   <- mean_A_boot - mean_B_boot
+          
+          # --- Test statistics ---
           if ("L2" %in% stat) {
-            res[i, "L2"] <- n * sum((diff_boot^2) * w)
+            diff_tfd <- tf::tfd(matrix(diff_boot, 1), arg = subgrid)
+            res[i, "L2"] <- n * tf::tf_integrate(diff_tfd^2, arg = subgrid)
           }
           if ("D" %in% stat) {
             res[i, "D"] <- sqrt(n) * max(abs(diff_boot))
           }
-
+          
           draw_successful <- TRUE
         }
-
+        
         if (!draw_successful) {
           warning(sprintf(
             "Max redraws (%d) exceeded in one bootstrap replicate, skipping.",
@@ -196,13 +201,11 @@ boot_mean_test <- function(fd = NULL,
           ))
         }
       }
-      list(stats = res, diffs = diffs)
+      list(stats = res)
     }
 
     boot_mat <- do.call(rbind, lapply(boot_list, `[[`, "stats"))
-    boot_diffs <- do.call(rbind, lapply(boot_list, `[[`, "diffs"))
-
-    list(boot_mat = boot_mat, boot_diffs = boot_diffs)
+    list(boot_mat = boot_mat)
   }
 
   boot_res <- tryCatch(
@@ -219,7 +222,6 @@ boot_mean_test <- function(fd = NULL,
   )
 
   boot_mat <- boot_res$boot_mat
-  boot_diffs <- boot_res$boot_diffs
 
   valid_idx <- rowSums(!is.na(boot_mat)) > 0
   n_valid <- sum(valid_idx)
